@@ -152,7 +152,7 @@ def eval_gaussian_3d(means, scales, rotations, opacities, shs, x):
     
     # print(f"\ncov3D: {cov3D.shape}\n {cov3D}")
     
-    vecs = x[..., None, :] - means[None, ...]        # [M, N, 3]
+    vecs = x[..., None, :] - means[None, ...]      # [M, N, 3]
     vecs_norm = vecs / vecs.norm(dim=-1, keepdim=True)
     
     # print(f"\nvec: {vecs.shape}\n {vecs}")
@@ -179,25 +179,30 @@ def eval_gaussian_3d(means, scales, rotations, opacities, shs, x):
     return value  # [M]
     
     
-def plot_3d(volume, res):
-    X, Y, Z = torch.meshgrid(torch.arange(res), torch.arange(res), torch.arange(res), indexing='xy')
+def plot_3d(volume, res, points):
+    X, Y, Z = torch.meshgrid(torch.linspace(0, 5, res), torch.linspace(0, 5, res), torch.linspace(0, 5, res), indexing='xy')
     
     X = X.detach().numpy()
     Y = Y.detach().numpy()
     Z = Z.detach().numpy()
     volume = volume.cpu().detach().numpy()
     
-    Z = res - 1 - Z
-    X = res - 1 - X
+    # Z = 5 - Z
+    # X = 5 - X
     
-    fig = go.Figure(data=go.Volume(
-		x=Z.flatten(), y=X.flatten(), z=Y.flatten(),
+    points = points.cpu().detach().numpy()
+    
+    fig = go.Figure(data=[go.Volume(
+		x=X.flatten(), y=Y.flatten(), z=Z.flatten(),
 		value=volume.flatten(),
 		opacity=0.05,
 		surface_count=10,
-		))
+		),
+        go.Scatter3d(x=points[:, 0], y=points[:, 1], z=points[:, 2], mode="markers")                
+                          ])
     fig.update_layout(scene_xaxis_showticklabels=False,
 					scene_yaxis_showticklabels=False,
 					scene_zaxis_showticklabels=False)
 
     fig.show()
+    
