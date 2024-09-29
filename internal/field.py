@@ -8,7 +8,7 @@ class Grid3D():
         the input grid_val must be N*N*N
     """
     
-    def __init__(self, grid_val, cval=0.):
+    def __init__(self, grid_val : torch.Tensor, cval=0.):
         self.grid_val = grid_val
         shape = grid_val.shape
         
