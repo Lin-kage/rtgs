@@ -22,3 +22,4 @@ class Grid3D():
     def interp(self, x, order=1):
         coords = x * (self.grid_res-1)
         out = ndimage.map_coordinates(self.grid_val, coords.T, order=order, cval=self.cval)
+        return out

@@ -1,7 +1,5 @@
-
 import torch
-import plotly.graph_objects as go
-
+from .gaussian import Gaussian
 
 C0 = 0.28209479177387814
 C1 = 0.4886025119029199
@@ -33,7 +31,7 @@ C4 = [
     0.6258357354491761,
 ]
 
-eval_factor = 1. / pow(2. * torch.pi, 3./2.)
+eval_factor = 1. / pow(2. * torch.pi, 1.5) / pow(10, 1.5)
 
 
 def eval_sh(deg, sh, dirs):
@@ -100,7 +98,7 @@ def build_rotation(r):
 
     q = r / norm[:, None]
 
-    R = torch.zeros((q.size(0), 3, 3), device='cuda')
+    R = torch.zeros((q.size(0), 3, 3), device=r.device)
 
     r = q[:, 0]
     x = q[:, 1]
@@ -119,90 +117,74 @@ def build_rotation(r):
     return R
 
 
-def build_scaling_rotation(s, r):
-    L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device="cuda")
+def build_scaling_rotation(s, r, inverse=False):
+    L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device=s.device)
     R = build_rotation(r)
 
     L[:, 0, 0] = s[:, 0]
     L[:, 1, 1] = s[:, 1]
     L[:, 2, 2] = s[:, 2]
 
-    L = R @ L
-    return L
-
-
-def get_cov_3D(scales, rotations):
-    L = build_scaling_rotation(scales, rotations)
+    ret = R @ L
     
-    # print(f"\nL:{L.shape}\n {L}")
+    if not inverse:
+        return ret
     
-    return L @ L.transpose(-2, -1)
+    L[:, 0, 0] = 1 / s[:, 0]
+    L[:, 1, 1] = 1 / s[:, 1]
+    L[:, 2, 2] = 1 / s[:, 2]
+    
+    ret_i = R @ L
+    
+    return ret, ret_i
 
 
-def eval_gaussian_3d(means, scales, rotations, opacities, shs, x):
+def get_cov_3D(scales, rotations, inverse=False):
+    if not inverse:
+        L = build_scaling_rotation(scales, rotations)
+        return L @ L.transpose(-2, -1)
+    else:
+        L, L_i = build_scaling_rotation(scales, rotations, True)
+        return L @ L.transpose(-2, -1), L_i @ L_i.transpose(-2, -1)
+
+
+def eval_gaussian_3d(gaussians : Gaussian, x):
     """
         Args:
             x: Tensor [M*3], M is the number of input points
     """
     
-    # print(f"\nscales: {scales.shape}\n {scales}")
-    # print(f"\rotations: {rotations.shape}\n {rotations}")
+    cov3D = get_cov_3D(gaussians.scales, gaussians.rotations)   # [N, 3, 3]
     
-    cov3D = get_cov_3D(scales, rotations)   # [N, 3, 3]
+    cov3D_i = torch.inverse(cov3D)
     
-    # print(f"\ncov3D: {cov3D.shape}\n {cov3D}")
+    vecs = x[..., None, :] - gaussians.means[None, ...]      # [M, N, 3]
+    # vecs_norm = vecs / vecs.norm(dim=-1, keepdim=True)
+    # sh = torch.clamp_min(eval_sh(4, gaussian.shs, vecs_norm), 0)
     
-    vecs = x[..., None, :] - means[None, ...]      # [M, N, 3]
-    vecs_norm = vecs / vecs.norm(dim=-1, keepdim=True)
+    matmul = (vecs[..., None, :] @ cov3D_i @ vecs[..., None]).reshape(x.shape[0], gaussians.means.shape[0])  # [M, N]
     
-    # print(f"\nvec: {vecs.shape}\n {vecs}")
+    # print(f"matmul: {matmul.shape}\n {matmul}")
     
-    matmul = (vecs[..., None, :] @ cov3D @ vecs[..., None, :].transpose(-2,-1)).reshape(x.shape[0], means.shape[0])  # [M, N]
+    factor = eval_factor / torch.sqrt(torch.det(cov3D)) * gaussians.opacities  # [N]
     
-    # print(f"\nmatmul: {matmul.shape}\n {matmul}")
-    
-    factor = eval_factor / torch.det(cov3D) * opacities  # [N]
-    
-    # print(f"\nfactor: {factor.shape}\n {factor}")
-    
-    # print(f"\nshs: {shs.shape}\n{shs}")
-    
-    sh = torch.clamp_min(eval_sh(4, shs, vecs_norm), 0)
-    
-    # print(f"\nsh: {sh.shape}\n{sh}")
+    # print(f"factor: {factor.shape}\n {factor}")
     
     value = factor * torch.exp(-.5 * matmul) # * sh  # [M, N]
     
-    # print(f"\nvalue: {value.shape}\n {value}") 
-    
     value = value.sum(-1)
+        
     return value  # [M]
-    
-    
-def plot_3d(volume, res, points):
-    X, Y, Z = torch.meshgrid(torch.linspace(0, 5, res), torch.linspace(0, 5, res), torch.linspace(0, 5, res), indexing='xy')
-    
-    X = X.detach().numpy()
-    Y = Y.detach().numpy()
-    Z = Z.detach().numpy()
-    volume = volume.cpu().detach().numpy()
-    
-    # Z = 5 - Z
-    # X = 5 - X
-    
-    points = points.cpu().detach().numpy()
-    
-    fig = go.Figure(data=[go.Volume(
-		x=X.flatten(), y=Y.flatten(), z=Z.flatten(),
-		value=volume.flatten(),
-		opacity=0.05,
-		surface_count=10,
-		),
-        go.Scatter3d(x=points[:, 0], y=points[:, 1], z=points[:, 2], mode="markers")                
-                          ])
-    fig.update_layout(scene_xaxis_showticklabels=False,
-					scene_yaxis_showticklabels=False,
-					scene_zaxis_showticklabels=False)
 
-    fig.show()
+
+def get_eta_autograd(gaussians : Gaussian, x : torch.Tensor):
+    
+    x_with_grad = x.clone().detach().requires_grad_(True).to(gaussians.device)  # [M, 3]
+    
+    etas = eval_gaussian_3d(gaussians, x_with_grad) + 1
+    
+    d_etas = torch.autograd.grad(etas.sum(), x_with_grad)[0]
+    
+    return etas, d_etas  # [M], [M, 3]
+    
     

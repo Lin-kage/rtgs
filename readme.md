@@ -1,5 +1,9 @@
 
 
+Problem1: 
+    the density of a small GS is large
+
+
 # TODO: finish redering
 
 + rendering model 

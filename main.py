@@ -4,12 +4,16 @@ from lightning.pytorch.cli import LightningCLI
 # simple demo classes for your convenience
 from lightning.pytorch.demos.boring_classes import DemoModel, BoringDataModule
 
-from internal.gaussian import GaussianModel
+from internal.gaussian import Gaussian
 
 import torch
 import os
-from internal.utils import plot_3d
+from internal.viewer import plot_3d
 from internal.render import ray_trace
+from internal.utils import get_eta_autograd
+
+from internal.debug import print_tensor
+import time
 
 
 def cli_main():
@@ -24,25 +28,36 @@ if __name__ == "__main__":
 
     seed = 2
     
+    t = time.time()
+    
     torch.manual_seed(seed=seed)
     
-    model = GaussianModel(1)
-    precision = 128
+    gaussians = Gaussian(30)
+    gaussians.init_randomize()
+    precision = 80
     
-    x, y, z = torch.meshgrid(torch.linspace(0, 5, precision), torch.linspace(0, 5, precision), torch.linspace(0, 5, precision), indexing='xy')
+    x, y, z = torch.meshgrid(torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), indexing='xy')
     points = torch.stack([x, y, z], -1).reshape(-1,3).to("cuda")
     
-    eta, d_eta = model.get_eta(points)
+    eta, d_eta = get_eta_autograd(gaussians, points)
     
-    print("Calc Over")
+    print(f"Calc Over, time cost {time.time() - t}")
     
+    # print_tensor("mean", gaussians.means)
+    # print_tensor("scale", gaussians.scales)
+    # print_tensor("eta", eta)
+    # print_tensor("d_eta", d_eta)
     
-    test_rays_o = torch.tensor([[0.,2.5 ,2.5], [0.,2.5 ,2.7],[0.,2.5 ,2.9],[0.,2.5 ,2.3],[0.,2.5 ,2.1]]).to("cuda")
-    test_rays_dir = torch.tensor([[1.,0.,0],[1.,0.,0],[1.,0.,0],[1.,0.,0],[1.,0.,0] ]).to("cuda")
+    t = time.time()
     
-    test_rays_points = ray_trace(model, test_rays_o, test_rays_dir, 0.05, 100)
+    test_rays_o = torch.tensor([[0.,.5 ,.5], [0.,.5 ,.6],[0.,.5 ,.7],[0.,.5 ,.4],[0.,.5 ,.3]]).to(gaussians.device)
+    test_rays_dir = torch.tensor([[1.,0.,0],[1.,0.,0],[1.,0.,0],[1.,0.,0],[1.,0.,0] ]).to(gaussians.device)
     
-    # print(test_rays_points)
+    test_rays_points = ray_trace(gaussians, test_rays_o, test_rays_dir, 0.01, 150)
+    
+    # print_tensor("points", test_rays_points.transpose(0,1))
+
+    print(f"Trace Over, time cost {time.time() - t}")
     
     plot_3d(eta, precision, test_rays_points)
     
