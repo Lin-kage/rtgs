@@ -2,12 +2,13 @@ import torch
 import plotly.graph_objects as go
 
 
-def plot_3d(volume, res, points):
+def plot_3d(volume: torch.Tensor, res, points: torch.Tensor):
     X, Y, Z = torch.meshgrid(torch.linspace(0, 1, res), torch.linspace(0, 1, res), torch.linspace(0, 1, res), indexing='xy')
     
-    X = X.detach().numpy()
-    Y = Y.detach().numpy()
-    Z = Z.detach().numpy()
+    X = X.cpu().detach().numpy()
+    Y = Y.cpu().detach().numpy()
+    Z = Z.cpu().detach().numpy()
+    
     volume = volume.cpu().detach().numpy()
     
     # Z = 5 - Z

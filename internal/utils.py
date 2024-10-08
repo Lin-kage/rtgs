@@ -162,7 +162,7 @@ def eval_gaussian_3d(gaussians : Gaussian, x):
     # vecs_norm = vecs / vecs.norm(dim=-1, keepdim=True)
     # sh = torch.clamp_min(eval_sh(4, gaussian.shs, vecs_norm), 0)
     
-    matmul = (vecs[..., None, :] @ cov3D_i @ vecs[..., None]).reshape(x.shape[0], gaussians.means.shape[0])  # [M, N]
+    matmul = (vecs[..., None, :] @ cov3D_i[None, ...] @ vecs[..., None]).reshape(x.shape[0], gaussians.means.shape[0])  # [M, N]
     
     # print(f"matmul: {matmul.shape}\n {matmul}")
     
@@ -180,11 +180,47 @@ def eval_gaussian_3d(gaussians : Gaussian, x):
 def get_eta_autograd(gaussians : Gaussian, x : torch.Tensor):
     
     x_with_grad = x.clone().detach().requires_grad_(True).to(gaussians.device)  # [M, 3]
-    
-    etas = eval_gaussian_3d(gaussians, x_with_grad) + 1
-    
-    d_etas = torch.autograd.grad(etas.sum(), x_with_grad)[0]
+
+    with torch.enable_grad():
+        etas = eval_gaussian_3d(gaussians, x_with_grad) + 1
+        
+        d_etas = torch.autograd.grad(etas.sum(), x_with_grad)[0]
     
     return etas, d_etas  # [M], [M, 3]
+    
+    
+def get_eta_manual(gaussians : Gaussian, x : torch.Tensor):
+    """
+        M : x is [M, 3]
+        N : number of gaussians
+    """
+    
+    cov3D = get_cov_3D(gaussians.scales, gaussians.rotations)
+    cov3D_i = torch.inverse(cov3D)
+    
+    vecs = x[..., None, :] - gaussians.means[None, ...]  # [M, N, 3]
+    
+    matmuls = (vecs[..., None, :] @ cov3D_i[None, ...] @ vecs[..., None]).reshape(x.shape[0], gaussians.means.shape[0])  # [M, N]
+    
+    factors = eval_factor / torch.sqrt(torch.det(cov3D)) * gaussians.opacities  # [N]
+    
+    etas = factors[None, ...] * torch.exp(-.5 * matmuls)  # [M, N]
+    etas = etas.sum(-1) + 1  # [M]
+    
+    d_etas_term = torch.zeros_like(cov3D_i)  # [N, 3, 3]
+    d_etas_term[:] = cov3D_i[:]  
+    d_etas_term[:, 0, 0] = cov3D_i[:, 0, 0] * 2
+    d_etas_term[:, 1, 1] = cov3D_i[:, 1, 1] * 2
+    d_etas_term[:, 2, 2] = cov3D_i[:, 2, 2] * 2
+    
+    d_etas_term = (d_etas_term[None, ...] @ vecs[..., None]).reshape(x.shape[0], gaussians.means.shape[0], 3)   # [M, N, 3]
+    
+    d_etas = factors[None, ..., None] * -.5 * d_etas_term * torch.exp(-.5 * matmuls[..., None])  # [M, N, 3]
+    
+    d_etas = d_etas.sum(dim=1)  # [M, 3]
+    
+    return etas, d_etas
+    
+    
     
     

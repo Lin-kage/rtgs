@@ -15,7 +15,9 @@ from internal.model import GaussianModel
 from internal.field import Grid3D
 from internal.viewer import plot_3d
 from internal.render import ray_trace
-from internal.utils import get_eta_autograd
+from internal.utils import get_eta_autograd, get_eta_manual
+
+from internal.test import EtaDataLoader, EtaGaussianModel
 
 from internal.debug import print_tensor
 import time
@@ -33,22 +35,32 @@ if __name__ == "__main__":
     
     torch.manual_seed(seed=seed)
     
-    lum_field = torch.from_numpy(np.load('./data/matern_s2/lum_field.npy', allow_pickle=False))
+    lum_field = (np.load('./data/matern_s2/lum_field.npy', allow_pickle=False))
+    eta_true = (np.load('./data/matern_s2/eta_true.npy', allow_pickle=True))
     
-    trainer = pl.Trainer(max_epochs=500, min_steps=50, accelerator='gpu', devices=[6,7])
-    trainer.fit(
-        GaussianModel(Grid3D(lum_field.reshape(64,64,64))),
-        RaysDataLoader(data_path='./data/matern_s2', data_type='matern')
-        )
+    test_trainer = pl.Trainer(max_epochs=100, accelerator='gpu', devices=[7], strategy='ddp_find_unused_parameters_true')
+    test_trainer.fit(
+        EtaGaussianModel(Grid3D(eta_true).interp, lr=1e-3, n_gaussians=500, view_per_epoch=5, edge_fac=1e-4),
+        EtaDataLoader(data_path='./data/matern_s2', data_type='matern', batchsize=100, num=10000)
+    )
     
-    # gaussians = Gaussian(30)
+    # trainer = pl.Trainer(max_epochs=500, min_steps=50, accelerator='gpu', devices=[7])
+    # trainer.fit(
+    #     GaussianModel(Grid3D(eta_true.reshape(16,16,16)).interp),
+    #     # GaussianModel(Grid3D(lum_field.reshape(64,64,64)).interp),
+    #     RaysDataLoader(data_path='./data/matern_s2', data_type='matern')
+    #     )
+    
+    # t = time.time()
+    # gaussians = Gaussian(1)
     # gaussians.init_randomize()
     # precision = 80
     
     # x, y, z = torch.meshgrid(torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), indexing='xy')
     # points = torch.stack([x, y, z], -1).reshape(-1,3).to("cuda")
     
-    # eta, d_eta = get_eta_autograd(gaussians, points)
+    # # eta, d_eta = get_eta_autograd(gaussians, points)
+    # eta, d_eta = get_eta_manual(gaussians, points)
     
     # print(f"Calc Over, time cost {time.time() - t}")
     
@@ -57,12 +69,11 @@ if __name__ == "__main__":
     # # print_tensor("eta", eta)
     # # print_tensor("d_eta", d_eta)
     
-    # t = time.time()
     
     # test_rays_o = torch.tensor([[0.,.5 ,.5], [0.,.5 ,.6],[0.,.5 ,.7],[0.,.5 ,.4],[0.,.5 ,.3]]).to(gaussians.device)
     # test_rays_dir = torch.tensor([[1.,0.,0],[1.,0.,0],[1.,0.,0],[1.,0.,0],[1.,0.,0] ]).to(gaussians.device)
     
-    # test_rays_points = ray_trace(gaussians, test_rays_o, test_rays_dir, 0.01, 150)
+    # test_rays_points = ray_trace(gaussians, test_rays_o, test_rays_dir, 0.01, 150, auto_grad=False)
     
     # # print_tensor("points", test_rays_points.transpose(0,1))
 

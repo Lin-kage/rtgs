@@ -4,12 +4,15 @@ import torch
 import lightning.pytorch as pl
 import numpy as np  
 
+from .field import Grid3D
+
 
 class RaysDataLoader(pl.LightningDataModule):
-    def __init__(self, data_path, data_type):
+    def __init__(self, data_path, data_type, batchsize=64):
         super().__init__()
         self.data_path = data_path
         self.data_type = data_type
+        self.batchsize = batchsize
         
         
     def setup(self, stage : str):
@@ -24,15 +27,15 @@ class RaysDataLoader(pl.LightningDataModule):
             
     
     def train_dataloader(self):
-        return DataLoader(self.rays[:4000], shuffle=True)
+        return DataLoader(self.rays[:4000], batch_size=self.batchsize, shuffle=True)
         
         
     
     def val_dataloader(self):
-        return DataLoader(self.rays[4000:], shuffle=False)
+        return DataLoader(self.rays[4000:], batch_size=self.batchsize, shuffle=False)
     
         
     
     def test_dataloader(self):
-        return DataLoader(self.rays, shuffle=True)
+        return DataLoader(self.rays, batch_size=self.batchsize, shuffle=True)
         

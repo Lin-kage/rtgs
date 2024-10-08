@@ -19,31 +19,44 @@ class GaussianModel(pl.LightningModule):
         
         self.gaussians = Gaussian(n_gaussians)
         self.gaussians.init_randomize()
+        self.d_s = 1.2 / self.d_steps
         
         self.to(self.gaussians.device)
         
         
     def forward(self, input):   
         
-        d_s = 1.2 / self.d_steps
-        
         rays_o = input[:, :3]
         rays_dir = input[:, 3:6]
-        rays_lum = torch.zeros_like(input[:, 6:], device=rays_o.device)
 
         rays_dir = rays_dir / rays_dir.norm(dim=-1, keepdim=True)
         
+        rays_points = ray_trace(self.gaussians, rays_o, rays_dir, self.d_s, self.d_steps, auto_grad=True)
+        
+        with torch.no_grad():
+            rays_lums = self.lum_field_fn(rays_points.reshape(-1, 3)).reshape(rays_o.shape[0], -1) * self.d_s
+            
+        return rays_lums.sum(-1)
+    
+    
+    # ray trace step by step
+    def ray_trace_lum(self, rays_o, rays_dir):
+        
+        rays_lum = torch.zeros_like(rays_o[:, 0], device=rays_o.device)
+        
         for _ in range(self.d_steps):
             
-            etas, d_etas = get_eta_autograd(self.gaussians, rays_o)
-            
-            rays_o = rays_o + rays_dir / etas[:, None] * d_s
-            rays_dir = rays_dir + d_etas * d_s
-            rays_lum = rays_lum + self.lum_field_fn(rays_o) * d_s
+            # etas, d_etas = get_eta_autograd(self.gaussians, rays_o)
+            etas, d_etas = torch.ones(rays_o.shape[0], device=rays_o.device, requires_grad=True), torch.zeros_like(rays_o, device=rays_o.device, requires_grad=True)
+            rays_o = rays_o + rays_dir / etas[:, None] * self.d_s
+            rays_dir = rays_dir + d_etas * self.d_s
+            with torch.no_grad():
+                lums = self.lum_field_fn(rays_o)
+            # lums = torch.zeros_like(rays_lum)
+            rays_lum = rays_lum + lums * self.d_s
             rays_dir = rays_dir / rays_dir.norm(dim=-1, keepdim=True)
             
         return rays_lum
-    
     
     
     def training_step(self, batch, batch_idx):

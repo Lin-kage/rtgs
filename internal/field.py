@@ -8,7 +8,7 @@ class Grid3D():
         the input grid_val must be N*N*N
     """
     
-    def __init__(self, grid_val : torch.Tensor, cval=0.):
+    def __init__(self, grid_val, cval=0.):
         self.grid_val = grid_val
         shape = grid_val.shape
         
@@ -21,5 +21,5 @@ class Grid3D():
         
     def interp(self, x, order=1):
         coords = x * (self.grid_res-1)
-        out = ndimage.map_coordinates(self.grid_val, coords.T, order=order, cval=self.cval)
-        return out
+        out = ndimage.map_coordinates(self.grid_val, coords.T.cpu(), order=order, cval=self.cval, )
+        return torch.tensor(out, device=x.device)
