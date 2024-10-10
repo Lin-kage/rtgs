@@ -12,12 +12,13 @@ import numpy as np
 from internal.dataloader import RaysDataLoader
 from internal.gaussian import Gaussian
 from internal.model import GaussianModel
-from internal.field import Grid3D
+from internal.field import Grid3D, TensorGrid3D
 from internal.viewer import plot_3d
 from internal.render import ray_trace
 from internal.utils import get_eta_autograd, get_eta_manual
 
 from internal.test import EtaDataLoader, EtaGaussianModel, EtaNerf
+from internal.debug import tensor_grid_test
 
 from internal.debug import print_tensor
 import time
@@ -37,19 +38,19 @@ if __name__ == "__main__":
     
     lum_field = (np.load('./data/matern_s8/lum_field.npy', allow_pickle=False))
     eta_true = (np.load('./data/matern_s8/eta_true.npy', allow_pickle=True))
-        
+    
     # print(f"eta: {eta_true.shape}")
     
     # test_trainer = pl.Trainer(max_epochs=150, accelerator='gpu', devices=[7], strategy='ddp_find_unused_parameters_true')
     # test_trainer.fit(
-    #     EtaNerf(trunk_depth=8,skips=[4], view_per_epoch=25, lr=1e-5, eta_field_fn=Grid3D((eta_true-1)*100).interp),
-    #     # EtaGaussianModel(Grid3D((eta_true-1)*100 + 1).interp, lr=1e-4, n_gaussians=1000, view_per_epoch=5, edge_fac=5e-4),
+    #     # EtaNerf(trunk_depth=8,skips=[4], view_per_epoch=25, lr=1e-5, eta_field_fn=Grid3D((eta_true-1)*100).interp),
+    #     EtaGaussianModel(Grid3D((eta_true-1)*100 + 1).interp, lr=1e-4, n_gaussians=1000, view_per_epoch=5, edge_fac=5e-4),
     #     EtaDataLoader(data_path='./data/matern_s8', data_type='matern', batchsize=512, precision=32)
     # )
     
     trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
     trainer.fit(
-        GaussianModel(Grid3D(lum_field.reshape(16,16,16)).interp),
+        GaussianModel(TensorGrid3D(torch.from_numpy(lum_field).reshape(64,64,64)).interp_linear, d_steps=100),
         # GaussianModel(Grid3D(lum_field.reshape(64,64,64)).interp),
         RaysDataLoader(data_path='./data/matern_s2', data_type='matern')
         )
@@ -85,3 +86,5 @@ if __name__ == "__main__":
     # plot_3d(eta, precision, test_rays_points)    
     
     # note: it is good practice to implement the CLI in a function and call it in the main if block
+    
+    
