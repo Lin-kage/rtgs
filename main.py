@@ -39,8 +39,6 @@ if __name__ == "__main__":
     lum_field = (np.load('./data/matern_s8/lum_field.npy', allow_pickle=False))
     eta_true = (np.load('./data/matern_s8/eta_true.npy', allow_pickle=True))
     
-    # print(f"eta: {eta_true.shape}")
-    
     # test_trainer = pl.Trainer(max_epochs=150, accelerator='gpu', devices=[7], strategy='ddp_find_unused_parameters_true')
     # test_trainer.fit(
     #     # EtaNerf(trunk_depth=8,skips=[4], view_per_epoch=25, lr=1e-5, eta_field_fn=Grid3D((eta_true-1)*100).interp),
@@ -48,12 +46,12 @@ if __name__ == "__main__":
     #     EtaDataLoader(data_path='./data/matern_s8', data_type='matern', batchsize=512, precision=32)
     # )
     
-    trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
-    trainer.fit(
-        GaussianModel(TensorGrid3D(torch.from_numpy(lum_field).reshape(64,64,64)).interp_linear, d_steps=100),
-        # GaussianModel(Grid3D(lum_field.reshape(64,64,64)).interp),
-        RaysDataLoader(data_path='./data/matern_s2', data_type='matern')
-        )
+    # trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
+    # trainer.fit(
+    #     GaussianModel(TensorGrid3D(torch.from_numpy(lum_field).reshape(64,64,64)).interp_linear, d_steps=100),
+    #     # GaussianModel(Grid3D(lum_field.reshape(64,64,64)).interp),
+    #     RaysDataLoader(data_path='./data/matern_s8', data_type='matern')
+    #     )
     
     # t = time.time()
     # gaussians = Gaussian(1)

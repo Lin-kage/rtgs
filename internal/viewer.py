@@ -2,7 +2,7 @@ import torch
 import plotly.graph_objects as go
 
 
-def plot_3d(volume: torch.Tensor, res, points: torch.Tensor=torch.zeros([1,3])):
+def plot_3d(volume: torch.Tensor, res, points: torch.Tensor=torch.zeros([1,3]), reverse=False):
     X, Y, Z = torch.meshgrid(torch.linspace(0, 1, res), torch.linspace(0, 1, res), torch.linspace(0, 1, res), indexing='xy')
     
     X = X.cpu().detach().numpy()
@@ -11,8 +11,10 @@ def plot_3d(volume: torch.Tensor, res, points: torch.Tensor=torch.zeros([1,3])):
     
     volume = volume.cpu().detach().numpy()
     
-    # Z = 5 - Z
-    # X = 5 - X
+    if reverse:
+      K = X
+      X = Y
+      Y = K
     
     points = points.cpu().detach().numpy()
     

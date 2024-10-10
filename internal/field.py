@@ -44,6 +44,7 @@ class TensorGrid3D():
         
     
     def interp_linear(self, x : torch.Tensor):
+        
         self.grid_val = self.grid_val.to(x.device)
         coords = x * (self.grid_res-1)
         coords_int = torch.floor(coords).to(x.device)

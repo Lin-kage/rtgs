@@ -100,11 +100,11 @@ class GaussianModel(pl.LightningModule):
     
     def view_eta_field(self, precision=32):
         x, y, z = torch.meshgrid(torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), indexing='xy')
-        points = torch.stack([x, y, z], -1).reshape(-1,3)
+        points = torch.stack([x, y, z], -1).reshape(-1,3).to(self.gaussians.device)
         
         with torch.no_grad():
             eta, _ = get_eta_manual(self.gaussians, points)
-        plot_3d(points, precision)
+        plot_3d(eta, precision)
     
     
     def on_train_start(self):

@@ -12,7 +12,7 @@ def tensor_grid_test():
     
     lum_field = (np.load('./data/matern_s8/lum_field.npy', allow_pickle=False))
     
-    # plot_3d(torch.Tensor(lum_field), 64, torch.zeros([1,3]))
+    plot_3d(torch.Tensor(lum_field), 64, torch.zeros([1,3]), reverse=True)
     
     grid = TensorGrid3D(torch.from_numpy(lum_field).reshape(64,64,64))
     
