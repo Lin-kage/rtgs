@@ -25,7 +25,7 @@ class Gaussian(nn.Module):
         init._no_grad_uniform_(self.shs,0., 1.)
         init._no_grad_uniform_(self.scales, .05, 1)
         init._no_grad_uniform_(self.rotations, 0., 1.)
-        init._no_grad_uniform_(self.opacities, .0, .5)
+        init._no_grad_uniform_(self.opacities, .0, .3)
 
     
     

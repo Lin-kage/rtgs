@@ -31,18 +31,15 @@ class GaussianModel(pl.LightningModule):
 
         rays_dir = rays_dir / rays_dir.norm(dim=-1, keepdim=True)
         
-        rays_points = ray_trace(self.gaussians, rays_o, rays_dir, self.d_s, self.d_steps, auto_grad=True)
-        
-        with torch.no_grad():
-            rays_lums = self.lum_field_fn(rays_points.reshape(-1, 3)).reshape(rays_o.shape[0], -1) * self.d_s
+        rays_lum = self.ray_trace_lum(rays_o, rays_dir)
             
-        return rays_lums.sum(-1)
+        return rays_lum
     
     
     # ray trace step by step
     def ray_trace_lum(self, rays_o, rays_dir):
         
-        rays_lum = torch.zeros_like(rays_o[:, 0], device=rays_o.device)
+        rays_lum = torch.zeros_like(rays_o[:, :1], device=rays_o.device)
         
         for _ in range(self.d_steps):
             

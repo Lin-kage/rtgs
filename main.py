@@ -17,7 +17,7 @@ from internal.viewer import plot_3d
 from internal.render import ray_trace
 from internal.utils import get_eta_autograd, get_eta_manual
 
-from internal.test import EtaDataLoader, EtaGaussianModel
+from internal.test import EtaDataLoader, EtaGaussianModel, EtaNerf
 
 from internal.debug import print_tensor
 import time
@@ -31,25 +31,28 @@ def cli_main():
 if __name__ == "__main__":
     # cli_main()
 
-    seed = 2
+    seed = 40
     
     torch.manual_seed(seed=seed)
     
-    lum_field = (np.load('./data/matern_s2/lum_field.npy', allow_pickle=False))
-    eta_true = (np.load('./data/matern_s2/eta_true.npy', allow_pickle=True))
+    lum_field = (np.load('./data/matern_s8/lum_field.npy', allow_pickle=False))
+    eta_true = (np.load('./data/matern_s8/eta_true.npy', allow_pickle=True))
+        
+    # print(f"eta: {eta_true.shape}")
     
-    test_trainer = pl.Trainer(max_epochs=100, accelerator='gpu', devices=[7], strategy='ddp_find_unused_parameters_true')
-    test_trainer.fit(
-        EtaGaussianModel(Grid3D(eta_true).interp, lr=1e-3, n_gaussians=500, view_per_epoch=5, edge_fac=1e-4),
-        EtaDataLoader(data_path='./data/matern_s2', data_type='matern', batchsize=100, num=10000)
-    )
+    # test_trainer = pl.Trainer(max_epochs=150, accelerator='gpu', devices=[7], strategy='ddp_find_unused_parameters_true')
+    # test_trainer.fit(
+    #     EtaNerf(trunk_depth=8,skips=[4], view_per_epoch=25, lr=1e-5, eta_field_fn=Grid3D((eta_true-1)*100).interp),
+    #     # EtaGaussianModel(Grid3D((eta_true-1)*100 + 1).interp, lr=1e-4, n_gaussians=1000, view_per_epoch=5, edge_fac=5e-4),
+    #     EtaDataLoader(data_path='./data/matern_s8', data_type='matern', batchsize=512, precision=32)
+    # )
     
-    # trainer = pl.Trainer(max_epochs=500, min_steps=50, accelerator='gpu', devices=[7])
-    # trainer.fit(
-    #     GaussianModel(Grid3D(eta_true.reshape(16,16,16)).interp),
-    #     # GaussianModel(Grid3D(lum_field.reshape(64,64,64)).interp),
-    #     RaysDataLoader(data_path='./data/matern_s2', data_type='matern')
-    #     )
+    trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
+    trainer.fit(
+        GaussianModel(Grid3D(lum_field.reshape(16,16,16)).interp),
+        # GaussianModel(Grid3D(lum_field.reshape(64,64,64)).interp),
+        RaysDataLoader(data_path='./data/matern_s2', data_type='matern')
+        )
     
     # t = time.time()
     # gaussians = Gaussian(1)
@@ -79,6 +82,6 @@ if __name__ == "__main__":
 
     # print(f"Trace Over, time cost {time.time() - t}")
     
-    # plot_3d(eta, precision, test_rays_points)
+    # plot_3d(eta, precision, test_rays_points)    
     
     # note: it is good practice to implement the CLI in a function and call it in the main if block
