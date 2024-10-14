@@ -21,11 +21,11 @@ class Gaussian(nn.Module):
             
     
     def init_randomize(self):
-        init._no_grad_uniform_(self.means, .0, 1.)
+        init._no_grad_uniform_(self.means, 0.0, 1.0)
         init._no_grad_uniform_(self.shs,0., 1.)
-        init._no_grad_uniform_(self.scales, .05, 1)
+        init._no_grad_uniform_(self.scales, .05, .5)
         init._no_grad_uniform_(self.rotations, 0., 1.)
-        init._no_grad_uniform_(self.opacities, .0, .3)
+        init._no_grad_uniform_(self.opacities, .0, .1)
 
     
     

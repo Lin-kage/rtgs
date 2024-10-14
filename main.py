@@ -39,30 +39,40 @@ if __name__ == "__main__":
     lum_field = (np.load('./data/matern_s8/lum_field.npy', allow_pickle=False))
     eta_true = (np.load('./data/matern_s8/eta_true.npy', allow_pickle=True))
     
+    eta_true = (eta_true - 1) * 100 + 1
+    
+    # plot_3d(torch.Tensor(eta_true), 16, reverse=True)
+    plot_3d(torch.tensor(lum_field), 64)
+    
+    assert False
+    
     # test_trainer = pl.Trainer(max_epochs=150, accelerator='gpu', devices=[7], strategy='ddp_find_unused_parameters_true')
     # test_trainer.fit(
-    #     # EtaNerf(trunk_depth=8,skips=[4], view_per_epoch=25, lr=1e-5, eta_field_fn=Grid3D((eta_true-1)*100).interp),
-    #     EtaGaussianModel(Grid3D((eta_true-1)*100 + 1).interp, lr=1e-4, n_gaussians=1000, view_per_epoch=5, edge_fac=5e-4),
-    #     EtaDataLoader(data_path='./data/matern_s8', data_type='matern', batchsize=512, precision=32)
+    #     # EtaNerf(trunk_depth=3,skips=[], trunk_width=256, view_per_epoch=25, lr=1e-3, L_embed=6, eta_field_fn=Grid3D(eta_true).interp),
+    #     EtaGaussianModel(Grid3D(eta_true).interp, lr=1e-4, n_gaussians=500, view_per_epoch=1, edge_fac=0),
+    #     EtaDataLoader(data_type="manual", eta_manual=eta_true, batchsize=64, precision=32)
     # )
     
-    # trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
-    # trainer.fit(
-    #     GaussianModel(TensorGrid3D(torch.from_numpy(lum_field).reshape(64,64,64)).interp_linear, d_steps=100),
-    #     # GaussianModel(Grid3D(lum_field.reshape(64,64,64)).interp),
-    #     RaysDataLoader(data_path='./data/matern_s8', data_type='matern')
-    #     )
+    # plot_3d(torch.Tensor(eta_true), 16, reverse=True)
+    
+    trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
+    trainer.fit(
+        GaussianModel(TensorGrid3D(torch.from_numpy(lum_field).reshape(64,64,64)).interp_linear, 
+                      d_steps=50, n_gaussians=200, lr=5e-6, view_per_epochs=1),
+        # GaussianModel(Grid3D(lum_field.reshape(64,64,64)).interp),
+        RaysDataLoader(data_path='./data/matern_s8', data_type='matern', batchsize=64)
+        )
     
     # t = time.time()
-    # gaussians = Gaussian(1)
+    # gaussians = Gaussian(100)
     # gaussians.init_randomize()
     # precision = 80
     
     # x, y, z = torch.meshgrid(torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), indexing='xy')
     # points = torch.stack([x, y, z], -1).reshape(-1,3).to("cuda")
     
-    # # eta, d_eta = get_eta_autograd(gaussians, points)
-    # eta, d_eta = get_eta_manual(gaussians, points)
+    # eta, d_eta = get_eta_autograd(gaussians, points)
+    # # eta, d_eta = get_eta_manual(gaussians, points)
     
     # print(f"Calc Over, time cost {time.time() - t}")
     

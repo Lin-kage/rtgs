@@ -202,7 +202,7 @@ def get_eta_manual(gaussians : Gaussian, x : torch.Tensor):
     
     matmuls = (vecs[..., None, :] @ cov3D_i[None, ...] @ vecs[..., None]).reshape(x.shape[0], gaussians.means.shape[0])  # [M, N]
     
-    factors = eval_factor / torch.sqrt(torch.det(cov3D)) * gaussians.opacities  # [N]
+    factors = eval_factor / torch.sqrt(torch.det(cov3D)) * torch.clamp(gaussians.opacities, 0, 1)  # [N]
     
     etas = factors[None, ...] * torch.exp(-.5 * matmuls)  # [M, N]
     etas = etas.sum(-1) + 1  # [M]

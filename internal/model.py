@@ -10,7 +10,8 @@ class GaussianModel(pl.LightningModule):
 
     def __init__(self, 
                  lum_field_fn, 
-                 lr = 1e-5, n_gaussians = 100, d_steps = 500):
+                 lr = 1e-5, n_gaussians = 100, d_steps = 500,
+                 view_per_epochs = 10):
         super().__init__()
         
         self.lr = lr
@@ -21,6 +22,9 @@ class GaussianModel(pl.LightningModule):
         
         self.gaussians = Gaussian(n_gaussians)
         self.gaussians.init_randomize()
+        
+        self.view_cnt = 0
+        self.view_per_epochs = view_per_epochs
         
         self.to(self.gaussians.device)
         
@@ -112,4 +116,11 @@ class GaussianModel(pl.LightningModule):
     
     
     def on_train_epoch_end(self):
+        
+        self.view_cnt += 1
+        if self.view_cnt != self.view_per_epochs:
+            return
+        self.view_cnt = 0
+        
         self.view_eta_field()
+        print("\n")

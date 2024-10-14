@@ -27,7 +27,7 @@ class RaysDataLoader(pl.LightningDataModule):
             
     
     def train_dataloader(self):
-        return DataLoader(self.rays[:4000], batch_size=self.batchsize, shuffle=True)
+        return DataLoader(self.rays, batch_size=self.batchsize, shuffle=True)
         
         
     
