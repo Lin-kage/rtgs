@@ -20,12 +20,12 @@ class Gaussian(nn.Module):
         self.init_randomize()
             
     
-    def init_randomize(self):
+    def init_randomize(self, opacity_rg=[.0, .001]):
         init._no_grad_uniform_(self.means, 0.0, 1.0)
-        init._no_grad_uniform_(self.shs,0., 1.)
+        init._no_grad_uniform_(self.shs, 0., 1.)
         init._no_grad_uniform_(self.scales, .05, .5)
         init._no_grad_uniform_(self.rotations, 0., 1.)
-        init._no_grad_uniform_(self.opacities, .0, .1)
+        init._no_grad_uniform_(self.opacities, opacity_rg[0], opacity_rg[1])
 
     
     
