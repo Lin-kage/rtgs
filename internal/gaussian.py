@@ -19,11 +19,11 @@ class Gaussian(nn.Module):
         else:
             self.init_empty()
         
-        self.means = nn.Parameter(self.means, device=self.device, dtype=torch.float, requires_grad=self.require_grad))
-        self.shs = nn.Parameter(self.shs, device=self.device, dtype=torch.float, requires_grad=self.require_grad))
-        self.scales = nn.Parameter(self.scales, device=self.device, dtype=torch.float, requires_grad=self.require_grad))
-        self.rotations = nn.Parameter(self.rotations, device=self.device, dtype=torch.float, requires_grad=self.require_grad))
-        self.opacities = nn.Parameter(self.opacities, device=self.device, dtype=torch.float, requires_grad=self.require_grad))
+        self.means = nn.Parameter(self.means, device=self.device, dtype=torch.float, requires_grad=self.require_grad)
+        self.shs = nn.Parameter(self.shs, device=self.device, dtype=torch.float, requires_grad=self.require_grad)
+        self.scales = nn.Parameter(self.scales, device=self.device, dtype=torch.float, requires_grad=self.require_grad)
+        self.rotations = nn.Parameter(self.rotations, device=self.device, dtype=torch.float, requires_grad=self.require_grad)
+        self.opacities = nn.Parameter(self.opacities, device=self.device, dtype=torch.float, requires_grad=self.require_grad)
     
     
     def reset_parameters(self) -> None:
