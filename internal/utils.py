@@ -166,7 +166,7 @@ def eval_gaussian_3d(gaussians : Gaussian, x):
     
     # print(f"matmul: {matmul.shape}\n {matmul}")
     
-    factor = eval_factor / torch.sqrt(torch.det(cov3D)) * gaussians.opacities  # [N]
+    factor = eval_factor / torch.sqrt(torch.det(cov3D)) * torch.clamp(gaussians.opacities, 0, 1)  # [N]
     
     # print(f"factor: {factor.shape}\n {factor}")
     

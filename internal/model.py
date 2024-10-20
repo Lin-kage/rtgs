@@ -1,17 +1,25 @@
 import torch
 import lightning.pytorch as pl
 import numpy as np  
+import torch.nn as nn
+import torch.nn.functional as F 
 from .gaussian import Gaussian
 from .render import ray_trace
 from .utils import get_eta_autograd, get_eta_manual
 from .viewer import plot_3d
+from .field import FieldGenerator, TensorGrid3D
 
 class GaussianModel(pl.LightningModule):    
 
     def __init__(self, 
                  lum_field_fn, 
-                 lr = 1e-5, n_gaussians = 100, d_steps = 500,
-                 view_per_epochs = 10):
+                 lr = 1e-5, d_steps = 500, 
+                 view_per_epochs = 10,
+                 n_gaussians = 1,
+                 device = "cuda",
+                 init_randomlize = False,
+                 gaussian_file = None
+                 ):
         super().__init__()
         
         self.lr = lr
@@ -19,9 +27,14 @@ class GaussianModel(pl.LightningModule):
         self.d_steps = d_steps
         self.lum_field_fn = lum_field_fn
         self.d_s = 1.2 / self.d_steps
+        self.ave_train_loss_cnt = 0
+        self.ave_train_loss = 0.
         
-        self.gaussians = Gaussian(n_gaussians)
-        self.gaussians.init_randomize()
+        if gaussian_file is not None:
+            self.gaussians = Gaussian(n=n_gaussians, device=device, init_from_file=gaussian_file, require_grad=True)
+        if init_randomlize:
+            self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=True, require_grad=True)
+            self.gaussians.init_randomize_manual(scales_rg=[0.05, .5], opacity_rg=[0., 0.001])
         
         self.view_cnt = 0
         self.view_per_epochs = view_per_epochs
@@ -36,7 +49,8 @@ class GaussianModel(pl.LightningModule):
 
         rays_dir = rays_dir / rays_dir.norm(dim=-1, keepdim=True)
         
-        rays_lum = self.ray_trace_lum(rays_o, rays_dir)
+        rays_lum = ray_trace(rays_o, rays_dir, self.d_s, self.d_steps, 
+                             self.lum_field_fn, lambda x :get_eta_manual(self.gaussians, x), auto_grad=False)
             
         return rays_lum
     
@@ -44,7 +58,7 @@ class GaussianModel(pl.LightningModule):
     # ray trace step by step
     def ray_trace_lum(self, rays_o, rays_dir):
         
-        rays_lum = torch.zeros_like(rays_o[:, :1], device=rays_o.device)
+        rays_lum = torch.zeros_like(rays_o[:, 0], device=rays_o.device)
         
         for _ in range(self.d_steps):
             
@@ -65,11 +79,14 @@ class GaussianModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         
         rays_data = batch
-        rays_lum_target = rays_data[:, 6:]
+        rays_lum_target = rays_data[:, 6]
         rays_lum = self.forward(rays_data)
         
-        loss = torch.mean(torch.square(rays_lum-rays_lum_target))
+        loss = torch.mean(torch.square(rays_lum - rays_lum_target))
         self.log('train_loss', loss, prog_bar=True)
+        
+        self.ave_train_loss += loss
+        self.ave_train_loss_cnt += 1
         
         return loss
             
@@ -77,7 +94,7 @@ class GaussianModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         
         rays_data = batch
-        rays_lum_target = rays_data[:, 6:]
+        rays_lum_target = rays_data[:, 6]
         rays_lum = self.forward(rays_data)
         
         loss = torch.mean(torch.square(rays_lum - rays_lum_target))
@@ -89,7 +106,7 @@ class GaussianModel(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         
         rays_data = batch
-        rays_lum_target = rays_data[:, 6:]
+        rays_lum_target = rays_data[:, 6]
         rays_lum = self.forward(rays_data)
         
         loss = torch.mean(torch.square(rays_lum - rays_lum_target))
@@ -117,10 +134,14 @@ class GaussianModel(pl.LightningModule):
     
     def on_train_epoch_end(self):
         
-        self.view_cnt += 1
-        if self.view_cnt != self.view_per_epochs:
-            return
-        self.view_cnt = 0
+        self.log("ave_train_loss", self.ave_train_loss/self.ave_train_loss_cnt, prog_bar=True, sync_dist=True)
+        self.ave_train_loss_cnt = 0
+        self.ave_train_loss = 0.
         
-        self.view_eta_field()
-        print("\n")
+        self.view_cnt += 1
+        if self.view_cnt % self.view_per_epochs == 0:
+            self.view_eta_field()
+            print("\n")
+            
+            
+        
