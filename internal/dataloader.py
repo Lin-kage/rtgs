@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 import torch
 import lightning.pytorch as pl
 import numpy as np  
+import os
 
 from .field import Grid3D
 
@@ -24,6 +25,8 @@ class RaysDataLoader(pl.LightningDataModule):
             self.rays[:, :7] = self.ray_lum_target
             
             self.rays = torch.from_numpy(self.rays)
+        elif self.data_type == 'manual':
+            self.rays = torch.load(os.path.join(self.data_path, 'rays_data.pt'))
             
     
     def train_dataloader(self):
