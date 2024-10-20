@@ -1,13 +1,13 @@
 import torch
 from .utils import get_eta_autograd, get_eta_manual
+from .viewer import plot_3d
 
 
 def ray_trace(rays_o : torch.Tensor, rays_dir : torch.Tensor, d_s, d_steps, lum_field_fn, eta_field_fn, auto_grad=False):
     
-    rays_points = []
     rays_dir = rays_dir / rays_dir.norm(dim=-1, keepdim=True)
+    rays_lum = torch.zeros_like(rays_o[:, 0])
     for _ in range(d_steps):
-        rays_points.append(rays_o)
         
         if auto_grad:
             with torch.autograd():
@@ -20,9 +20,14 @@ def ray_trace(rays_o : torch.Tensor, rays_dir : torch.Tensor, d_s, d_steps, lum_
         rays_o = rays_o + rays_dir / etas[:, None] * d_s
         rays_dir = rays_dir + d_etas * d_s
         rays_dir = rays_dir / rays_dir.norm(dim=-1, keepdim=True)
+        rays_lum += lum_field_fn(rays_o) * d_s
         
-    rays_points = torch.cat(rays_points, dim=0)
-    rays_lum = lum_field_fn(rays_points).reshape(rays_o.shape[0], -1).sum(dim=-1)
+    
+    # precision = 16
+    # x, y, z = torch.meshgrid(torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), indexing='xy')
+    # points = torch.stack([x, y, z], -1).reshape(-1,3).to("cuda")
+    # eta, _ = eta_field_fn(points)
+    # plot_3d(eta, precision, torch.cat(rays_points, dim=0))
     
     return rays_lum
         
