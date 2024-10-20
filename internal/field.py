@@ -1,5 +1,7 @@
 import torch
 from scipy import ndimage
+from .gaussian import Gaussian
+from .utils import get_eta_manual, eval_gaussian_3d
 
 
 class Grid3D():
@@ -81,9 +83,25 @@ class TensorGrid3D():
         return result
                 
             
+class FieldGenerator():
+    """
+        using 3dgs to generate a field
+    """
+    
+    def __init__(self, n_gaussian=1, device = "cuda", init_from_file=None, init_random=True):
+        
+        self.gaussians = Gaussian(n_gaussian, device, init_from_file, init_random, False)
         
         
+    def get_lum(self, points):
+        
+        lum_field = eval_gaussian_3d(self.gaussians, points)
+        
+        return lum_field
         
         
+    def get_eta(self, points):
         
+        eta, d_eta = get_eta_manual(self.gaussians, points)
         
+        return eta, d_eta
