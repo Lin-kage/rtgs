@@ -3,6 +3,7 @@ import lightning.pytorch as pl
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np  
+import os
 from .gaussian import Gaussian
 from .render import ray_trace
 from .utils import get_eta_autograd, get_eta_manual
@@ -15,7 +16,8 @@ class EtaGaussianModel(pl.LightningModule):
     def __init__(self, 
                  eta_field_fn, 
                  lr = 1e-5, n_gaussians = 100, view_per_epoch=5, 
-                 edge_fac=.2, edge_presision=80):
+                 edge_fac=.2, edge_presision=80, save_path=None, save_per_epoch=5, 
+                 load_path=None):
         super().__init__()
         
         self.lr = lr
@@ -24,9 +26,14 @@ class EtaGaussianModel(pl.LightningModule):
         self.eta_field = eta_field_fn
         self.view_count = 0
         self.view_per_epoch = view_per_epoch
+        self.save_path = save_path
+        self.save_per_epoch = save_per_epoch
         
-        self.gaussians = Gaussian(n_gaussians)
-        self.gaussians.init_randomize()
+        if load_path is not None:
+            self.gaussians = Gaussian(init_from_file=load_path, require_grad=True)
+        else:
+            self.gaussians = Gaussian(n_gaussians)
+            self.gaussians.init_randomize_manual(scales_rg=[.05, .5], opacity_rg=[.0, .001])
         
         x, y, z = torch.meshgrid(torch.linspace(0, 1, edge_presision), torch.linspace(0, 1, edge_presision), torch.linspace(0, 1, edge_presision), indexing='xy')
         points = torch.stack([x, y, z], -1).reshape(-1,3)
@@ -38,6 +45,8 @@ class EtaGaussianModel(pl.LightningModule):
         
     def setup(self, stage:str):
         self.edge_points = self.edge_points.to(self.gaussians.device)
+        self.train_loss_accu = 0
+        self.train_epoch_cnt = 0
         
         
     def forward(self, input):   
@@ -55,6 +64,9 @@ class EtaGaussianModel(pl.LightningModule):
         etas = self.forward(batch)
         
         loss = torch.mean(torch.square(etas - etas_true))
+        self.train_loss_accu += loss
+        self.train_epoch_cnt += 1
+        
         self.log('train_loss', loss, prog_bar=True)
                 
         edge_etas, _ = get_eta_manual(self.gaussians, self.edge_points)
@@ -69,7 +81,7 @@ class EtaGaussianModel(pl.LightningModule):
         etas = self.forward(batch)
         
         loss = torch.mean(torch.square(etas - etas_true))
-        self.log('train_loss', loss, prog_bar=True)
+        # self.log('val_loss', loss, prog_bar=True)
         
         return loss
         
@@ -80,21 +92,26 @@ class EtaGaussianModel(pl.LightningModule):
         etas = self.forward(batch)
         
         loss = torch.mean(torch.square(etas - etas_true))
-        self.log('train_loss', loss, prog_bar=True)
+        self.log('test_loss', loss, prog_bar=True)
         
-        return loss
+        return loss        
         
     
     def on_train_epoch_end(self):
         
+        self.log("ave_train_loss", self.train_loss_accu / self.train_epoch_cnt, prog_bar=True, sync_dist=True)
+        self.train_loss_accu = 0 
+        self.train_epoch_cnt = 0
+        print("\n")
+        
         self.view_count += 1
-        if self.view_count != self.view_per_epoch:
-            return
-        self.view_count = 0
+        if self.view_count % self.view_per_epoch == 0:
+            self.veiw_etas(precision=32)
+        if self.view_count % self.save_per_epoch == 0:
+            if self.save_path is not None:
+                self.gaussians.save_gaussians(os.path.join(self.save_path,'gaussian_'+str(self.view_count)))
         
-        precision = 50
         
-        self.veiw_etas()
         
         
     def on_train_start(self):
@@ -127,11 +144,9 @@ class EtaGaussianModel(pl.LightningModule):
         
         plot_3d(eta, precision, torch.zeros([1,3]))
         
-        eta_true = self.eta_field(points)
+        # eta_true = self.eta_field(points)
         
-        plot_3d(eta_true, precision, torch.zeros([1,3]))
-        
-        print("view end")
+        # plot_3d(eta_true, precision, torch.zeros([1,3]))
     
         
     def configure_optimizers(self):

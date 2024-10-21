@@ -32,8 +32,9 @@ class GaussianModel(pl.LightningModule):
         
         if gaussian_file is not None:
             self.gaussians = Gaussian(n=n_gaussians, device=device, init_from_file=gaussian_file, require_grad=True)
-        if init_randomlize:
-            self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=True, require_grad=True)
+            self.n_gaussians = self.gaussians.n
+        elif init_randomlize:
+            self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=False, require_grad=True)
             self.gaussians.init_randomize_manual(scales_rg=[0.05, .5], opacity_rg=[0., 0.001])
         else:
             self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=False)
