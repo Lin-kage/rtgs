@@ -28,9 +28,11 @@ class RaysDataLoader(pl.LightningDataModule):
         elif self.data_type == 'manual':
             self.rays = torch.load(os.path.join(self.data_path, 'rays_data.pt'))
             
+        self.rays = self.rays[torch.randperm(self.rays.shape[0]), :]
+            
     
     def train_dataloader(self):
-        return DataLoader(self.rays, batch_size=self.batchsize, shuffle=True)
+        return DataLoader(self.rays[:4000], batch_size=self.batchsize, shuffle=True)
         
         
     

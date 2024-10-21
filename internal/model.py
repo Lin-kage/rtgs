@@ -35,6 +35,8 @@ class GaussianModel(pl.LightningModule):
         if init_randomlize:
             self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=True, require_grad=True)
             self.gaussians.init_randomize_manual(scales_rg=[0.05, .5], opacity_rg=[0., 0.001])
+        else:
+            self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=False)
         
         self.view_cnt = 0
         self.view_per_epochs = view_per_epochs
