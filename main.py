@@ -16,6 +16,7 @@ from internal.field import Grid3D, TensorGrid3D, FieldGenerator
 from internal.viewer import plot_3d
 from internal.render import ray_trace
 from internal.utils import get_eta_autograd, get_eta_manual
+from internal.config import *
 
 from internal.test import EtaDataLoader, EtaGaussianModel, EtaNerf
 from internal.debug import tensor_grid_test
@@ -33,7 +34,6 @@ if __name__ == "__main__":
     # cli_main()
 
     seed = 40
-    
     torch.manual_seed(seed=seed)
     
     data_path = './data/matern_s8'
@@ -41,18 +41,17 @@ if __name__ == "__main__":
     lum_field = (np.load(data_path + '/lum_field.npy', allow_pickle=False))
     eta_true = (np.load(data_path + '/eta_true.npy', allow_pickle=True))
     
-    # emplify the field
-    # eta_true = (eta_true - 1) * 10 + 1
-    
     # plot_3d(torch.Tensor(eta_true), 16, reverse=True)
     # plot_3d(torch.tensor(lum_field), 64)
+    
     trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
     trainer.fit(
-        GaussianModel(lum_field_fn = TensorGrid3D(torch.from_numpy(lum_field).reshape(64,64,64)).interp_linear, 
-                      d_steps=50, lr=1e-5, view_per_epochs=1,
-                      n_gaussians=2000, init_randomlize=True,
-                    #   gaussian_file='./gaussian_save/gaussian1.002/gaussian_3',
-                      device='cuda'),
+        GaussianModel(
+            RenderConfig=RenderConfig(lum_field_fn=TensorGrid3D(torch.tensor(lum_field).reshape(64,64,64)).interp_linear),
+            OptimizationConfig=OptimizationConfig(),
+            ViewConfig=ViewConfig(),
+            RandomizationConfig=RandomizationConfig(n_gaussians=2000, scales_rg=[.05, .5], opacities_rg=[0.0, 0.001])
+            ),
         RaysDataLoader(data_path='./gaussian_save/test1', data_type='manual', batchsize=32)
         )
     

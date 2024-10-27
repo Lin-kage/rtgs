@@ -148,7 +148,7 @@ def get_cov_3D(scales, rotations, inverse=False):
         return L @ L.transpose(-2, -1), L_i @ L_i.transpose(-2, -1)
 
 
-def eval_gaussian_3d(gaussians : Gaussian, x):
+def eval_gaussian_3d(gaussians, x: torch.Tensor) -> torch.Tensor:
     """
         Args:
             x: Tensor [M*3], M is the number of input points
@@ -177,7 +177,7 @@ def eval_gaussian_3d(gaussians : Gaussian, x):
     return value  # [M]
 
 
-def get_eta_autograd(gaussians : Gaussian, x : torch.Tensor):
+def get_eta_autograd(gaussians, x : torch.Tensor) -> tuple[torch.Tensor, torch.tensor]:
     
     x_with_grad = x.clone().detach().requires_grad_(True).to(gaussians.device)  # [M, 3]
 
@@ -189,7 +189,7 @@ def get_eta_autograd(gaussians : Gaussian, x : torch.Tensor):
     return etas, d_etas  # [M], [M, 3]
     
     
-def get_eta_manual(gaussians : Gaussian, x : torch.Tensor):
+def get_eta_manual(gaussians, x : torch.Tensor) -> tuple[torch.Tensor, torch.tensor]:
     """
         M : x is [M, 3]
         N : number of gaussians
