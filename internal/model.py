@@ -39,9 +39,10 @@ class GaussianModel(pl.LightningModule):
         else:
             self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=False)
         
-        self.view_cnt = 0
+        self.global_epoch = 0
         self.view_per_epochs = view_per_epochs
         
+        self.automatic_optimization = False
         self.to(self.gaussians.device)
         
         
@@ -56,6 +57,29 @@ class GaussianModel(pl.LightningModule):
                              self.lum_field_fn, lambda x :get_eta_manual(self.gaussians, x), auto_grad=False)
             
         return rays_lum
+    
+    
+    # return optimizer list, configured in configure_optimizers
+    def optimizers(self, use_pl_optimizer: bool = True):
+        optimizers = super().optimizers(use_pl_optimizer)
+        
+        if isinstance(optimizers, list) is False:
+            return [optimizers]
+        
+        return optimizers
+    
+    
+    # return lr_scheduler list, configured in configure_optimizers
+    def lr_schedulers(self):
+        lr_schedulers = super().lr_schedulers()
+
+        if lr_schedulers is None:
+            return []
+        
+        if isinstance(lr_schedulers, list) is False:
+            return [lr_schedulers]
+        
+        return lr_schedulers
     
     
     # ray trace step by step
@@ -81,17 +105,32 @@ class GaussianModel(pl.LightningModule):
     
     def training_step(self, batch, batch_idx):
         
+        # prework
+        optimizers = self.optimizers()
+        for optimizer in optimizers:
+            optimizer.zero_grad(set_to_none=True)
+        lr_schedulers = self.lr_schedulers()
+        
+        # forward
         rays_data = batch
         rays_lum_target = rays_data[:, 6]
         rays_lum = self.forward(rays_data)
         
+        # metrics
         loss = torch.mean(torch.square(rays_lum - rays_lum_target))
         self.log('train_loss', loss, prog_bar=True)
         
         self.ave_train_loss += loss
         self.ave_train_loss_cnt += 1
         
-        return loss
+        # backward
+        self.manual_backward(loss)
+        
+        for optimizer in optimizers:
+            optimizer.step()
+            
+        for lr_scheduler in lr_schedulers:
+            lr_scheduler.step()
             
             
     def validation_step(self, batch, batch_idx):
@@ -141,8 +180,8 @@ class GaussianModel(pl.LightningModule):
         self.ave_train_loss_cnt = 0
         self.ave_train_loss = 0.
         
-        self.view_cnt += 1
-        if self.view_cnt % self.view_per_epochs == 0:
+        self.global_epoch += 1
+        if self.global_epoch % self.view_per_epochs == 0:
             self.view_eta_field()
             print("\n")
             
