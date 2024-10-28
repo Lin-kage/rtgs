@@ -9,6 +9,7 @@ from .utils import get_eta_manual
 from .viewer import plot_3d
 from .field import FieldGenerator, TensorGrid3D
 from .config import RenderConfig, ViewConfig, OptimizationConfig, RandomizationConfig, FileConfig
+from .density_controller import DensityController
 
 
 class GaussianModel(pl.LightningModule):    
@@ -20,6 +21,7 @@ class GaussianModel(pl.LightningModule):
                  # for initialization
                  FileConfig: FileConfig=None,
                  RandomizationConfig: RandomizationConfig=None,
+                 density_controller = DensityController(),
                  device = "cuda",
                  ):
         super().__init__()
@@ -34,20 +36,22 @@ class GaussianModel(pl.LightningModule):
         self.d_steps = RenderConfig.d_steps
         self.d_s = RenderConfig.d_s
         
-        self.view_per_epoch = ViewConfig.view_per_epoch
-        self.save_per_epoch = ViewConfig.save_per_epoch
-        self.save_path = ViewConfig.save_path
+        self.view_config = ViewConfig
         
         self.file_config = FileConfig
         self.randomization_config = RandomizationConfig
     
         self.automatic_optimization = False
         
+        self.density_controller = density_controller
+        
         self.global_epoch = 0
         self.ave_train_loss_cnt = 0
         self.ave_train_loss = 0
         self.ave_val_loss_cnt = 0
         self.ave_val_loss = 0
+        
+        self.global_batch = 0
         
         # self.lr = lr
         # self.n_gaussians = n_gaussians
@@ -149,12 +153,20 @@ class GaussianModel(pl.LightningModule):
         # metrics
         loss = torch.mean(torch.square(rays_lum - rays_lum_target))
         self.log('train_loss', loss, prog_bar=True)
+        self.log('n_gs', float(self.n_gaussians), prog_bar=True)
         
         self.ave_train_loss += loss
         self.ave_train_loss_cnt += 1
         
         # backward
         self.manual_backward(loss)
+        
+        # after backward: densify
+        means_grad = self.means.grad
+        
+        # print(self.means)
+        
+        # self.density_controller.after_backward(means_grad, self, optimizers, self.global_epoch)
         
         for optimizer in optimizers:
             optimizer.step()
@@ -194,6 +206,9 @@ class GaussianModel(pl.LightningModule):
     
     
     def view_eta_field(self, precision=32):
+        if self.view_config.enable_view is False:
+            return
+        
         x, y, z = torch.meshgrid(torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), torch.linspace(0, 1, precision), indexing='xy')
         points = torch.stack([x, y, z], -1).reshape(-1,3).to(self.device)
         
@@ -203,7 +218,14 @@ class GaussianModel(pl.LightningModule):
     
     
     def on_train_start(self):
+        
         self.view_eta_field()
+        
+        
+    def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
+        self.global_batch += 1
+        if self.global_batch % 5 == 0:
+            self.view_eta_field()
     
     
     def on_train_epoch_end(self):
@@ -213,12 +235,12 @@ class GaussianModel(pl.LightningModule):
         self.ave_train_loss = 0.
         
         self.global_epoch += 1
-        if self.view_per_epoch > 0 and self.global_epoch % self.view_per_epoch == 0:
+        if self.view_config.view_per_epoch > 0 and self.global_epoch % self.view_config.view_per_epoch == 0:
             self.view_eta_field()
             print("\n")
             
-        if self.save_per_epoch > 0 and self.global_epoch % self.save_per_epoch == 0:
-            self.save_model(self.save_path)
+        if self.view_config.save_per_epoch > 0 and self.global_epoch % self.view_config.save_per_epoch == 0:
+            self.save_model(self.view_config.save_path)
             
             
     def on_validation_epoch_end(self):
@@ -337,9 +359,9 @@ class GaussianModel(pl.LightningModule):
         
             
     def set_properties(self, properties: dict[str, torch.Tensor]):
-        self.properties = properties
         for name in self.names:
             self.gaussians[name] = properties[name]
+        self.n_gaussians = self.gaussians["means"].shape[0]
             
             
     def opacity_activation(self, opacities: torch.Tensor) -> torch.Tensor:
@@ -376,5 +398,10 @@ class GaussianModel(pl.LightningModule):
     @property
     def opacities(self):
         return self.opacity_activation(self.gaussians["opacities"])
+    
+    # raw properties, not activated
+    @property
+    def properties(self):
+        return {name: self.gaussians[name] for name in self.names}
 
     

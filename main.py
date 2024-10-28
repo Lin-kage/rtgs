@@ -17,7 +17,7 @@ from internal.viewer import plot_3d
 from internal.render import ray_trace
 from internal.utils import get_eta_autograd, get_eta_manual
 from internal.config import *
-
+from internal.density_controller import DensityController
 from internal.test import EtaDataLoader, EtaGaussianModel, EtaNerf
 from internal.debug import tensor_grid_test
 
@@ -48,12 +48,19 @@ if __name__ == "__main__":
     trainer.fit(
         GaussianModel(
             RenderConfig=RenderConfig(lum_field_fn=TensorGrid3D(torch.tensor(lum_field).reshape(64,64,64)).interp_linear,),
-            OptimizationConfig=OptimizationConfig(means_lr=1e-4, opacities_lr=1e-6, scales_lr=1e-4, rotations_lr=1e-4),
-            ViewConfig=ViewConfig(view_per_epoch=-1, save_per_epoch=10, save_path='./gaussian_save/gaussian1028'),
-            FileConfig=FileConfig(data_path='./gaussian_save/gaussian1028/epoch_50', data_type='pt', activated=False)
-            # RandomizationConfig=RandomizationConfig(n_gaussians=2000, scales_rg=[.05, .5], opacities_rg=[0.0, 0.0001])
+            OptimizationConfig=OptimizationConfig(means_lr=1e-4, opacities_lr=1e-4, scales_lr=1e-4, rotations_lr=1e-4),
+            ViewConfig=ViewConfig(view_per_epoch=1, enable_view=True, save_per_epoch=10, save_path='./gaussian_save/gaussian1028'),
+            FileConfig=FileConfig(data_path='./gaussian_save/gaussian1028/epoch_40', data_type='pt', activated=False),
+            # RandomizationConfig=RandomizationConfig(n_gaussians=2000, scales_rg=[.05, .5], opacities_rg=[0.0, 0.0001]),
+            density_controller=DensityController(
+                densify_epoch_from_until=[0,1000], 
+                densify_grad_threshold=1e-3,
+                cull_opacity_threshold=[1e-7, 1e-2],
+                cull_scale_threshold=[0.005, 0.5],
+                clone_split_threshold=0.5,
+                ),
             ),
-        RaysDataLoader(data_path='./gaussian_save/test1', data_type='manual', batchsize=16)
+        RaysDataLoader(data_path='./gaussian_save/test1', data_type='manual', batchsize=32)
         )
     
     # ## Create Data

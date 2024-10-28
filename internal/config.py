@@ -1,9 +1,10 @@
 
 class ViewConfig:
-    def __init__(self, view_per_epoch = 10, save_per_epoch = 10, save_path = None):
+    def __init__(self, view_per_epoch = 10, enable_view = True, save_per_epoch = 10, save_path = None):
         self.view_per_epoch = view_per_epoch
         self.save_per_epoch = save_per_epoch
         self.save_path = save_path
+        self.enable_view = enable_view
         
 
 class RenderConfig:
