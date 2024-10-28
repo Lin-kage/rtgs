@@ -10,10 +10,10 @@ def ray_trace(rays_o : torch.Tensor, rays_dir : torch.Tensor, d_s, d_steps, lum_
     for _ in range(d_steps):
         
         if auto_grad:
-            with torch.autograd():
+            with torch.enable_grad():
                 rays_o_grad = rays_o.clone().requires_grad_(True)
                 etas = eta_field_fn(rays_o_grad)
-                d_etas = torch.autograd.grad(etas.sum(), rays_o_grad)
+                d_etas = torch.autograd.grad(etas.sum(), rays_o_grad)[0]
         else:
             etas, d_etas = eta_field_fn(rays_o)
         

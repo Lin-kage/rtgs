@@ -1,7 +1,9 @@
 
 class ViewConfig:
-    def __init__(self, view_per_epoch = 10):
+    def __init__(self, view_per_epoch = 10, save_per_epoch = 10, save_path = None):
         self.view_per_epoch = view_per_epoch
+        self.save_per_epoch = save_per_epoch
+        self.save_path = save_path
         
 
 class RenderConfig:
@@ -16,11 +18,12 @@ class RenderConfig:
 
 
 class OptimizationConfig:
-    means_lr: float = 1e-4
-    scales_lr: float = 1e-4
-    rotations_lr: float = 1e-4
-    opacities_lr: float = 1e-4
-    
+    def __init__(self, means_lr = 1e-4, scales_lr = 1e-4, rotations_lr = 1e-4, opacities_lr = 1e-4):
+        self.means_lr = means_lr
+        self.scales_lr = scales_lr
+        self.rotations_lr = rotations_lr
+        self.opacities_lr = opacities_lr
+        
 
 class RandomizationConfig:
     def __init__(self, n_gaussians: int = 1, 
@@ -37,6 +40,8 @@ class RandomizationConfig:
 
 
 class FileConfig:
-    def __init__(self, data_path: str, data_type: str):
+    def __init__(self, data_path: str, data_type: str, activated: bool = True):
         self.data_path = data_path
         self.data_type = data_type
+        self.activated = activated
+        

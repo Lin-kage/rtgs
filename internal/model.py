@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import os 
 from .utils import get_eta_manual
-from .gaussian import Gaussian
 from .viewer import plot_3d
 from .field import FieldGenerator, TensorGrid3D
 from .config import RenderConfig, ViewConfig, OptimizationConfig, RandomizationConfig, FileConfig
@@ -36,12 +35,15 @@ class GaussianModel(pl.LightningModule):
         self.d_s = RenderConfig.d_s
         
         self.view_per_epoch = ViewConfig.view_per_epoch
+        self.save_per_epoch = ViewConfig.save_per_epoch
+        self.save_path = ViewConfig.save_path
         
         self.file_config = FileConfig
         self.randomization_config = RandomizationConfig
     
         self.automatic_optimization = False
         
+        self.global_epoch = 0
         self.ave_train_loss_cnt = 0
         self.ave_train_loss = 0
         self.ave_val_loss_cnt = 0
@@ -169,7 +171,7 @@ class GaussianModel(pl.LightningModule):
         
         loss = torch.mean(torch.square(rays_lum - rays_lum_target))
         
-        self.ave_train_loss += loss
+        self.ave_val_loss += loss
         self.ave_val_loss_cnt += 1
         
         return loss
@@ -211,9 +213,12 @@ class GaussianModel(pl.LightningModule):
         self.ave_train_loss = 0.
         
         self.global_epoch += 1
-        if self.global_epoch % self.view_per_epochs == 0:
+        if self.view_per_epoch > 0 and self.global_epoch % self.view_per_epoch == 0:
             self.view_eta_field()
             print("\n")
+            
+        if self.save_per_epoch > 0 and self.global_epoch % self.save_per_epoch == 0:
+            self.save_model(self.save_path)
             
             
     def on_validation_epoch_end(self):
@@ -255,6 +260,11 @@ class GaussianModel(pl.LightningModule):
             rotations = torch.load(os.path.join(data_path, "rotations.pt")).to(self.device)
             opacities = torch.load(os.path.join(data_path, "opacities.pt")).to(self.device)
         
+        if not file_config.activated:
+            scales = self.scale_inverse_activation(scales)
+            rotations = self.rotation_inverse_activation(rotations)
+            opacities = self.opacity_inverse_activation(torch.clamp(opacities, min=1e-6, max=1.0-1e-6))
+        
         means = nn.Parameter(means, requires_grad=True)
         scales = nn.Parameter(scales, requires_grad=True)
         rotations = nn.Parameter(rotations, requires_grad=True)
@@ -268,15 +278,25 @@ class GaussianModel(pl.LightningModule):
         }
         self.n_gaussians = means.shape[0]
         self.set_properties(property_dict)
+        
+        
+    def save_model(self, path):
+        path = os.path.join(path, "epoch_{}".format(self.global_epoch))
+        if not os.path.exists(path):
+            os.makedirs(path)
+        torch.save(self.means, os.path.join(path, "means.pt"))
+        torch.save(self.scales, os.path.join(path, "scales.pt"))
+        torch.save(self.rotations, os.path.join(path, "rotations.pt"))
+        torch.save(self.opacities, os.path.join(path, "opacities.pt"))
             
             
     def setup_randomize(self, random_config: RandomizationConfig):
         
         self.n_gaussians = random_config.n_gaussians
         means = torch.rand([self.n_gaussians, 3], device=self.device, dtype=torch.float) * (random_config.means_rg[1] - random_config.means_rg[0]) + random_config.means_rg[0]
-        scales = torch.rand([self.n_gaussians, 3], device=self.device, dtype=torch.float) * (random_config.scales_rg[1] - random_config.scales_rg[0]) + random_config.scales_rg[0]
-        rotations = torch.rand([self.n_gaussians, 4], device=self.device, dtype=torch.float) * (random_config.rotation_rg[1] - random_config.rotation_rg[0]) + random_config.rotation_rg[0]
-        opacities = torch.rand([self.n_gaussians], device=self.device, dtype=torch.float) * (random_config.opacities_rg[1] - random_config.opacities_rg[0]) + random_config.opacities_rg[0]
+        scales = self.scale_inverse_activation(torch.rand([self.n_gaussians, 3], device=self.device, dtype=torch.float) * (random_config.scales_rg[1] - random_config.scales_rg[0]) + random_config.scales_rg[0])
+        rotations = self.rotation_inverse_activation(torch.rand([self.n_gaussians, 4], device=self.device, dtype=torch.float) * (random_config.rotation_rg[1] - random_config.rotation_rg[0]) + random_config.rotation_rg[0])
+        opacities = self.opacity_inverse_activation(torch.rand([self.n_gaussians], device=self.device, dtype=torch.float) * (random_config.opacities_rg[1] - random_config.opacities_rg[0]) + random_config.opacities_rg[0])
         
         means = nn.Parameter(means, requires_grad=True)
         scales = nn.Parameter(scales, requires_grad=True)
