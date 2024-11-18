@@ -5,7 +5,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import os 
-from .utils import get_eta_manual
+from .utils import get_eta_manual, get_eta_only
 from .viewer import plot_3d
 from .field import FieldGenerator, TensorGrid3D
 from .config import RenderConfig, ViewConfig, OptimizationConfig, RandomizationConfig, FileConfig
@@ -82,6 +82,11 @@ class GaussianModel(pl.LightningModule):
             self.setup_randomize(self.randomization_config)
         else:
             self.setup_empty(100)
+        res = 24
+        x, y, z = torch.meshgrid(torch.linspace(0, 1, res), torch.linspace(0, 1, res), torch.linspace(0, 1, res), indexing='xy')
+        points = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
+        select_mask = torch.logical_or(torch.any(points == 0, dim=-1), torch.any(points == 1, dim=-1))
+        self.reg_points = points[select_mask]
             
         
     # for configure_optimizers
@@ -161,18 +166,22 @@ class GaussianModel(pl.LightningModule):
         # backward
         self.manual_backward(loss)
         
-        # after backward: densify
-        means_grad = self.means.grad
+        means_grad = self.means.grad  
         
-        # print(self.means)
-        
-        # self.density_controller.after_backward(means_grad, self, optimizers, self.global_epoch)
+        new_properties, prune_mask, clone_mask = self.density_controller.before_step(means_grad, self, self.global_epoch)   
         
         for optimizer in optimizers:
             optimizer.step()
             
         for lr_scheduler in lr_schedulers:
             lr_scheduler.step()
+        
+        # if clone, each opacity is divided by 2
+        with torch.no_grad():
+            pad_mask = torch.zeros_like(self.gaussians['opacities'], dtype=torch.bool)
+            pad_mask[:clone_mask.shape[0]] = clone_mask
+            self.gaussians['opacities'][pad_mask] = self.opacity_inverse_activation(self.opacities[pad_mask] / 2.2)
+        self.density_controller.after_step(new_properties, prune_mask, self, optimizers, self.global_epoch)
             
             
     def validation_step(self, batch, batch_idx):
@@ -195,13 +204,14 @@ class GaussianModel(pl.LightningModule):
         rays_lum_target = rays_data[:, 6]
         rays_lum = self.forward(rays_data)
         
-        loss = torch.mean(torch.square(rays_lum - rays_lum_target))
+        loss = torch.mean(torch.square(rays_lum - rays_lum_target)) + self.optimization_config.reg_factor * torch.mean(get_eta_only(self, self.reg_points))
         self.log('test_loss', loss, prog_bar=True)
         
         return loss
         
         
     def configure_optimizers(self):
+        print("configure_optimizers called")
         return self.setup_trainning()
     
     
@@ -222,13 +232,20 @@ class GaussianModel(pl.LightningModule):
         self.view_eta_field()
         
         
-    def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
-        self.global_batch += 1
-        if self.global_batch % 5 == 0:
-            self.view_eta_field()
+    # def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
+    #     self.global_batch += 1
+    #     if self.global_batch % 5 == 0:
+    #         self.view_eta_field()
+    
+    def on_train_epoch_start(self):
+        self.epoch_end_once = 1
     
     
     def on_train_epoch_end(self):
+        
+        if self.epoch_end_once == 0:
+            return
+        self.epoch_end_once = 0
         
         self.log("ave_train_loss", self.ave_train_loss/self.ave_train_loss_cnt, prog_bar=True, sync_dist=True)
         self.ave_train_loss_cnt = 0
@@ -243,7 +260,14 @@ class GaussianModel(pl.LightningModule):
             self.save_model(self.view_config.save_path)
             
             
+    def on_validation_epoch_start(self):
+        self.val_epoch_once = 1
+    
+            
     def on_validation_epoch_end(self):
+        if self.val_epoch_once == 0:
+            return
+        self.val_epoch_once = 0
         
         self.log("ave_val_loss", self.ave_val_loss/self.ave_val_loss_cnt, prog_bar=True, sync_dist=True)
         self.ave_val_loss_cnt = 0

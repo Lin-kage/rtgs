@@ -1,3 +1,4 @@
+import torch
 
 class ViewConfig:
     def __init__(self, view_per_epoch = 10, enable_view = True, save_per_epoch = 10, save_path = None):
@@ -19,11 +20,13 @@ class RenderConfig:
 
 
 class OptimizationConfig:
-    def __init__(self, means_lr = 1e-4, scales_lr = 1e-4, rotations_lr = 1e-4, opacities_lr = 1e-4):
+    def __init__(self, means_lr = 1e-4, scales_lr = 1e-4, rotations_lr = 1e-4, opacities_lr = 1e-4, reg_factor = 1e-4):
         self.means_lr = means_lr
         self.scales_lr = scales_lr
         self.rotations_lr = rotations_lr
         self.opacities_lr = opacities_lr
+        self.reg_factor = reg_factor
+        
         
 
 class RandomizationConfig:

@@ -49,15 +49,15 @@ class TensorGrid3D():
         
         self.grid_val = self.grid_val.to(x.device)
         coords = x * (self.grid_res-1)
-        coords_int = torch.floor(coords).to(x.device)
-        coords_out_of_range = torch.any(coords_int < 0, dim=-1) | torch.any(coords_int >= self.grid_res - 1, dim=-1)
-        coords_in_range = ~ coords_out_of_range
+        coords_int = torch.floor(coords).long().to(x.device)
+        coords_out_of_range = torch.logical_or(torch.any(coords_int < 0, dim=-1), torch.any(coords_int >= self.grid_res - 1, dim=-1))
+        coords_in_range = torch.logical_not(coords_out_of_range)
          
         result = torch.zeros([x.shape[0]], device=x.device)
         result[coords_out_of_range] = self.cval
         
         coords = coords[coords_in_range]
-        coords_int = coords_int[coords_in_range].long()
+        coords_int = coords_int[coords_in_range]
         c_d = (coords - coords_int)
         x_d, y_d, z_d = c_d[:, 0], c_d[:, 1], c_d[:, 2]
         

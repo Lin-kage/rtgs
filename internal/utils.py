@@ -220,6 +220,27 @@ def get_eta_manual(gaussians, x : torch.Tensor) -> tuple[torch.Tensor, torch.ten
     d_etas = d_etas.sum(dim=1)  # [M, 3]
     
     return etas, d_etas
+
+
+def get_eta_only(gaussians, x : torch.Tensor) -> torch.Tensor:
+    """
+        M : x is [M, 3]
+        N : number of gaussians
+    """
+
+    cov3D = get_cov_3D(gaussians.scales, gaussians.rotations)
+    cov3D_i = torch.inverse(cov3D)
+
+    vecs = x[..., None, :] - gaussians.means[None, ...]
+    
+    matmuls = (vecs[..., None, :] @ cov3D_i[None, ...] @ vecs[..., None]).reshape(x.shape[0], gaussians.means.shape[0])  # [M, N]
+    
+    factors = eval_factor / torch.sqrt(torch.det(cov3D)) * torch.clamp(gaussians.opacities, 0, 1)  # [N]
+    
+    etas = factors[None, ...] * torch.exp(-.5 * matmuls)  # [M, N]
+    etas = etas.sum(-1) + 1  # [M]
+    
+    return etas
     
     
     

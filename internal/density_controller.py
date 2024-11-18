@@ -16,6 +16,16 @@ class Util:
                 assert group["name"] not in new_parameters, "parameter `{}` appears in multiple optimizers".format(group["name"])
 
                 extension_tensor = new_properties[group["name"]]
+                
+                # # test
+                # if group["name"] == 'means':
+                #     print("density_controller 1:\n", group['params'][0].grad)
+                #     param_copy = group['params'][0].clone()
+                #     print("density_controller 2:\n", param_copy.grad)
+                #     param_copy = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0), requires_grad=True)
+                #     print("density_controller 3:\n", param_copy.grad)
+                #     assert False
+                    
 
                 # get current sates
                 stored_state = opt.state.get(group['params'][0], None)
@@ -94,37 +104,51 @@ class DensityController():
         self.clone_split_threshold = clone_split_threshold
 
         
-    def before_backward(self):
-        pass
+    def before_step(self, means_grad: torch.Tensor, model, global_step: int):
+        if global_step < self.densify_epoch_from_until[0] or global_step >= self.densify_epoch_from_until[1]:
+            return torch.tensor([]), torch.tensor([]), torch.tensor([])
+    
+        with torch.no_grad():
+            return self._densify_and_prune_prework(means_grad, model)
     
     
-    def after_backward(self, means_grad: torch.Tensor, model, optimizers: list, global_step: int):
+    def after_step(self, new_properties, prune_mask, model, optimizers: list, global_step: int):
         if global_step < self.densify_epoch_from_until[0] or global_step >= self.densify_epoch_from_until[1]:
             return
     
         with torch.no_grad():
-            
-            self._densify_and_prune(means_grad, model, optimizers)   
+            return self._densify_and_prune(new_properties, prune_mask, model, optimizers)   
     
     
-    def _densify_and_prune(self, means_grad: torch.Tensor, model, optimizers: list):
+    def _densify_and_prune_prework(self, means_grad: torch.Tensor, model):
         
         grad_norm = torch.norm(means_grad, dim=-1)
         
         # densify
-        self._clone(grad_norm, model, optimizers)
-        self._split(grad_norm, model, optimizers)
+        clone_new_propertoes, clone_mask = self._clone(grad_norm, model)
+        split_new_properties, split_prune_mask = self._split(grad_norm, model)
+        
+        new_properties = {}
+        for key, value in clone_new_propertoes.items():
+            new_properties[key] = torch.cat((clone_new_propertoes[key], split_new_properties[key]), dim=0)
+        
         
         # prune
-        opacity_prune_mask = torch.logical_or(model.opacities < self.cull_opacity_threshold[0], model.opacities > self.cull_opacity_threshold[1])
+        scale_opacity_prune_mask = torch.logical_or(model.opacities / torch.mean(model.scales, dim=-1) < self.cull_opacity_threshold[0], model.opacities > self.cull_opacity_threshold[1])
         scale_prune_mask = torch.logical_or(torch.min(model.scales, dim=-1).values < self.cull_scale_threshold[0], torch.max(model.scales, dim=-1).values > self.cull_scale_threshold[1])
         
-        prune_mask = torch.logical_or(opacity_prune_mask, scale_prune_mask).squeeze()
+        prune_mask = torch.logical_or(split_prune_mask, torch.logical_or(scale_opacity_prune_mask, scale_prune_mask)).squeeze()
         
+        return new_properties, prune_mask, clone_mask
+    
+    
+    def _densify_and_prune(self, new_properties, prune_mask, model, optimizers: list):
         self._prune(prune_mask, model, optimizers)
+        new_parameters = self._cat_tensor_to_optimizer(new_properties, optimizers)
+        model.set_properties(new_parameters)
     
     
-    def _clone(self, grad_norm: torch.Tensor, model, optimizers: list):
+    def _clone(self, grad_norm: torch.Tensor, model):
         
         selected_mask = (grad_norm >= self.densify_grad_threshold)
         selected_mask = torch.logical_and(selected_mask, torch.max(model.scales, dim=-1).values < self.clone_split_threshold)
@@ -132,13 +156,15 @@ class DensityController():
         # copy selected gaussians
         new_properties = {}
         for key, value in model.properties.items():
-            new_properties[key] = value[selected_mask]
+            if key == 'opacities':
+                new_properties[key] = model.opacity_inverse_activation(model.opacity_activation(value[selected_mask]) / 2.)
+            else:
+                new_properties[key] = value[selected_mask]
             
-        new_parameters = self._cat_tensor_to_optimizer(new_properties, optimizers)
-        model.set_properties(new_parameters)
+        return new_properties, selected_mask
     
     
-    def _split(self, grad_norm: torch.Tensor, model, optimizers: list, N: int = 2):
+    def _split(self, grad_norm: torch.Tensor, model, N: int = 2):
         
         device = model.device
         
@@ -150,19 +176,7 @@ class DensityController():
         
         new_properties = self._split_properties(model, selected_mask, N)
         
-        new_parameters = self._cat_tensor_to_optimizer(new_properties, optimizers)
-        model.set_properties(new_parameters)
-        
-        # Prune splited gaussians
-        prune_filter = torch.cat((
-            selected_mask,
-            torch.zeros(
-                N * selected_mask.sum(),
-                device=device,
-                dtype=torch.bool,
-            ),
-        ))
-        self._prune(prune_filter, model, optimizers)
+        return new_properties, selected_mask
         
 
     def _prune(self, prune_mask: torch.Tensor, model, optimizers: list):
@@ -179,10 +193,12 @@ class DensityController():
         # split: means are radomly sampled from original gaussian
         new_means = (rots @ samples.unsqueeze(-1)).squeeze(-1) + model.means[selected_mask].repeat(N, 1) # [M*N, 3]
         new_scales = model.scale_inverse_activation(model.scales[selected_mask].repeat(N, 1) / (.8 * N))
+        new_opacities = model.opacity_inverse_activation(model.opacities[selected_mask].repeat(N) / N)
         
         new_properties = {
             'means': new_means,
             'scales': new_scales,
+            'opacities' : new_opacities,
         }
         
         for key, value in model.properties.items():

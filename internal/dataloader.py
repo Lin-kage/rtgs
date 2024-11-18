@@ -9,11 +9,12 @@ from .field import Grid3D
 
 
 class RaysDataLoader(pl.LightningDataModule):
-    def __init__(self, data_path, data_type, batchsize=64):
+    def __init__(self, data_path, data_type, batchsize=64, train_slice=0.95):
         super().__init__()
         self.data_path = data_path
         self.data_type = data_type
         self.batchsize = batchsize
+        self.train_slice = train_slice
         
         
     def setup(self, stage : str):
@@ -29,15 +30,17 @@ class RaysDataLoader(pl.LightningDataModule):
             self.rays = torch.load(os.path.join(self.data_path, 'rays_data.pt'))
             
         self.rays = self.rays[torch.randperm(self.rays.shape[0]), :]
+        if isinstance(self.train_slice, float):
+            self.train_slice = int(self.rays.shape[0] * self.train_slice)
             
     
     def train_dataloader(self):
-        return DataLoader(self.rays[:4000], batch_size=self.batchsize, shuffle=True)
+        return DataLoader(self.rays[:self.train_slice], batch_size=self.batchsize, shuffle=True)
         
         
     
     def val_dataloader(self):
-        return DataLoader(self.rays[4000:], batch_size=self.batchsize, shuffle=False)
+        return DataLoader(self.rays[self.train_slice:], batch_size=self.batchsize, shuffle=False)
     
         
     

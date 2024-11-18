@@ -41,43 +41,54 @@ if __name__ == "__main__":
     lum_field = (np.load(data_path + '/lum_field.npy', allow_pickle=False))
     eta_true = (np.load(data_path + '/eta_true.npy', allow_pickle=True))
     
-    plot_3d(torch.Tensor(eta_true), 16, reverse=True)
+    # plot_3d(torch.Tensor(eta_true), 16, reverse=True)
     # plot_3d(torch.tensor(lum_field), 64)
     
-    trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[6])
+    trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
     trainer.fit(
         GaussianModel(
             RenderConfig=RenderConfig(lum_field_fn=TensorGrid3D(torch.tensor(lum_field).reshape(64,64,64)).interp_linear,),
-            OptimizationConfig=OptimizationConfig(means_lr=1e-4, opacities_lr=1e-4, scales_lr=1e-4, rotations_lr=1e-4),
-            ViewConfig=ViewConfig(view_per_epoch=1, enable_view=True, save_per_epoch=10, save_path='./gaussian_save/gaussian1028'),
-            FileConfig=FileConfig(data_path='./gaussian_save/gaussian1028/epoch_40', data_type='pt', activated=False),
-            # RandomizationConfig=RandomizationConfig(n_gaussians=2000, scales_rg=[.05, .5], opacities_rg=[0.0, 0.0001]),
+            OptimizationConfig=OptimizationConfig(means_lr=2e-4, opacities_lr=2e-6, scales_lr=1e-4, rotations_lr=1e-4, reg_factor=1e-4),
+            ViewConfig=ViewConfig(view_per_epoch=5, enable_view=True, save_per_epoch=10, save_path='./gaussian_save/gaussian1117_modified_prune'),
+            # FileConfig=FileConfig(data_path='./gaussian_save/gaussian1117_modified_prune/epoch_120', data_type='pt', activated=False),
+            RandomizationConfig=RandomizationConfig(n_gaussians=4000, scales_rg=[.05, .7], opacities_rg=[0.0, 1e-5]),
             density_controller=DensityController(
-                densify_epoch_from_until=[0,1000], 
-                densify_grad_threshold=1e-3,
-                cull_opacity_threshold=[1e-7, 1e-2],
-                cull_scale_threshold=[0.005, 0.5],
-                clone_split_threshold=0.5,
+                densify_epoch_from_until=[10,1000], 
+                densify_grad_threshold=5e-4,
+                cull_opacity_threshold=[5e-7, 1e-2],
+                cull_scale_threshold=[0., 1.0],
+                clone_split_threshold=0.4,
                 ),
             ),
-        RaysDataLoader(data_path='./gaussian_save/test1', data_type='manual', batchsize=32)
+        RaysDataLoader(data_path='./gaussian_save/test4096', data_type='manual', batchsize=8, train_slice=0.95)
         )
     
     # ## Create Data
     # data_path = './data/matern_s8'
     # lum_field = (np.load(data_path + '/lum_field.npy', allow_pickle=False))
-    # eta_test = FieldGenerator(init_from_file='./gaussian_save/gaussian1.002_4/gaussian_35')
+    # # eta_true = (np.load(data_path + '/eta_true.npy', allow_pickle=True))
+    # eta_true = FieldGenerator(init_from_file='./gaussian_save/gaussian1.002_4/gaussian_35')
     # rays = torch.from_numpy(np.load(data_path + '/rays.npy', allow_pickle=False)).to("cuda")
     # rays_o = rays[:, :3]
     # rays_dir = rays[:, 3:6]
-    # rays_lum = ray_trace(rays_o, rays_dir, d_s=1.2/64, d_steps=64, 
+    
+    # n = 16000
+    # x = torch.linspace(0+1e-5, 1-1e-5, n)
+    # y = torch.linspace(0+1e-5, 1-1e-5, n)
+    # z = torch.zeros(n)
+    # rays_o = torch.stack([x,y,z], dim=1).to("cuda")
+    # rays_dir = torch.tensor([[0.,0.,1.]]).repeat(n,1).to("cuda")
+    
+    # d_step = 100
+    # rays_lum = ray_trace(rays_o, rays_dir, d_s=1.2/d_step, d_steps=d_step, 
     #                      lum_field_fn=TensorGrid3D(torch.tensor(lum_field).reshape(64,64,64)).interp_linear,
-    #                      eta_field_fn=lambda x: TensorGrid3D(torch.tensor(eta_true).reshape(16,16,16)).interp_linear(x), 
-    #                      auto_grad=True
+    #                     #  eta_field_fn=lambda x: TensorGrid3D(torch.tensor(eta_true).reshape(16,16,16)).interp_linear(x),
+    #                      eta_field_fn=lambda x: eta_true.get_eta(x),
+    #                      auto_grad=False
     #                      )
     # rays_data = torch.cat([rays_o, rays_dir, rays_lum[:, None]], dim=1)
-    # # print(f"rays lum: {rays_lum}\n")
-    # # torch.save(rays_data, './gaussian_save/test1/rays_data.pt')
+    # print(f"rays lum: {rays_lum}\n")
+    # torch.save(rays_data, './gaussian_save/test4096/rays_data.pt')
     # rays_lum_test = ray_trace(rays_o, rays_dir, d_s=1.2/64, d_steps=64, 
     #                      lum_field_fn=TensorGrid3D(torch.tensor(lum_field).reshape(64,64,64)).interp_linear,
     #                      eta_field_fn=lambda x: eta_test.get_eta(x), 
