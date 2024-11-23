@@ -8,21 +8,18 @@ import os
 from .utils import get_eta_manual, get_eta_only
 from .viewer import plot_3d
 from .field import FieldGenerator, TensorGrid3D
-from .config import RenderConfig, ViewConfig, OptimizationConfig, RandomizationConfig, FileConfig
+from .config_class import *
 from .density_controller import DensityController
 
 
 class GaussianModel(pl.LightningModule):    
 
     def __init__(self,
-                 RenderConfig: RenderConfig=RenderConfig(),
-                 OptimizationConfig: OptimizationConfig=OptimizationConfig(),
-                 ViewConfig: ViewConfig=ViewConfig(),
-                 # for initialization
-                 FileConfig: FileConfig=None,
-                 RandomizationConfig: RandomizationConfig=None,
-                 density_controller = DensityController(),
-                 device = "cuda",
+                 renderConfig: RenderConfig,
+                 optimizationConfig: OptimizationConfig,
+                 viewConfig: ViewConfig,
+                 setupConfig: SetupConfig,
+                 density_controller = DensityController()
                  ):
         super().__init__()
         
@@ -30,63 +27,48 @@ class GaussianModel(pl.LightningModule):
         
         self.names = ["means", "scales", "rotations", "opacities"]
         
-        self.optimization_config = OptimizationConfig
+        self.optimization_config = optimizationConfig
+        self.automatic_optimization = optimizationConfig.automatic_optimization
         
-        self.lum_field_fn = RenderConfig.lum_field_fn
-        self.d_steps = RenderConfig.d_steps
-        self.d_s = RenderConfig.d_s
+        self.lum_field_path = renderConfig.lum_field_path
+        self.d_steps = renderConfig.d_steps
+        self.d_s = renderConfig.d_s
         
-        self.view_config = ViewConfig
-        
-        self.file_config = FileConfig
-        self.randomization_config = RandomizationConfig
-    
-        self.automatic_optimization = False
+        self.setup_config = setupConfig
+            
+        self.view_config = viewConfig
         
         self.density_controller = density_controller
-        
-        self.global_epoch = 0
-        self.ave_train_loss_cnt = 0
-        self.ave_train_loss = 0
-        self.ave_val_loss_cnt = 0
-        self.ave_val_loss = 0
-        
-        self.global_batch = 0
-        
-        # self.lr = lr
-        # self.n_gaussians = n_gaussians
-        # self.d_steps = d_steps
-        # self.lum_field_fn = lum_field_fn
-        # self.d_s = 1.2 / self.d_steps
-        # self.ave_train_loss_cnt = 0
-        # self.ave_train_loss = 0.
-        
-        # if gaussian_file is not None:
-        #     self.gaussians = Gaussian(n=n_gaussians, device=device, init_from_file=gaussian_file, require_grad=True)
-        #     self.n_gaussians = self.gaussians.n
-        # elif init_randomlize:
-        #     self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=False, require_grad=True)
-        #     self.gaussians.init_randomize_manual(scales_rg=[0.05, .5], opacity_rg=[0., 0.001])
-        # else:
-        #     self.gaussians = Gaussian(n=n_gaussians, device=device, init_random=False)
-        
-        # self.global_epoch = 0
-        # self.view_per_epochs = view_per_epochs
         
         
     def setup(self, stage: str):
         
-        if self.file_config is not None:
-            self.setup_from_file(self.file_config)
-        elif self.randomization_config is not None:
-            self.setup_randomize(self.randomization_config)
-        else:
+        lum_field = (np.load(self.lum_field_path, allow_pickle=False))
+        self.lum_field_fn = TensorGrid3D(grid_val=torch.tensor(lum_field).reshape(64,64,64), cval=.0).interp_linear
+        
+        if self.setup_config.setup_option == 2:
+            self.setup_from_file(self.setup_config.from_file_path, self.setup_config.from_file_type, self.setup_config.activated)
+        elif self.setup_config.setup_option == 1:
+            self.setup_randomize(self.setup_config)
+        elif self.setup_config.setup_option == 0:
             self.setup_empty(100)
+        else:
+            raise NotImplementedError
+        
+        self.ave_val_loss = 0
+        self.ave_train_loss_cnt = 0
+        self.ave_train_loss = 0
+        self.ave_val_loss_cnt = 0
+        self.global_epoch = 0
+        
+        # regularization    
         res = 24
         x, y, z = torch.meshgrid(torch.linspace(0, 1, res), torch.linspace(0, 1, res), torch.linspace(0, 1, res), indexing='xy')
         points = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
         select_mask = torch.logical_or(torch.any(points == 0, dim=-1), torch.any(points == 1, dim=-1))
         self.reg_points = points[select_mask]
+        
+        self.view_eta_field()
             
         
     # for configure_optimizers
@@ -156,17 +138,21 @@ class GaussianModel(pl.LightningModule):
         rays_lum = self.forward(rays_data)
         
         # metrics
-        loss = torch.mean(torch.square(rays_lum - rays_lum_target))
-        self.log('train_loss', loss, prog_bar=True)
-        self.log('n_gs', float(self.n_gaussians), prog_bar=True)
+        if self.reg_points.device != self.device:
+            self.reg_points = self.reg_points.to(self.device)
         
-        self.ave_train_loss += loss
+        self.regs = self.optimization_config.reg_factor * torch.sum(get_eta_only(self, self.reg_points)-1)
+        self.loss = torch.mean(torch.square(rays_lum - rays_lum_target))
+        
+        self.ave_train_loss += self.loss
         self.ave_train_loss_cnt += 1
         
         # backward
-        self.manual_backward(loss)
+        self.manual_backward(self.loss)
         
-        means_grad = self.means.grad  
+        means_grad = self.means.grad
+        
+        self.manual_backward(self.regs)
         
         new_properties, prune_mask, clone_mask = self.density_controller.before_step(means_grad, self, self.global_epoch)   
         
@@ -204,7 +190,7 @@ class GaussianModel(pl.LightningModule):
         rays_lum_target = rays_data[:, 6]
         rays_lum = self.forward(rays_data)
         
-        loss = torch.mean(torch.square(rays_lum - rays_lum_target)) + self.optimization_config.reg_factor * torch.mean(get_eta_only(self, self.reg_points))
+        loss = torch.mean(torch.square(rays_lum - rays_lum_target))
         self.log('test_loss', loss, prog_bar=True)
         
         return loss
@@ -225,54 +211,7 @@ class GaussianModel(pl.LightningModule):
         with torch.no_grad():
             eta, _ = get_eta_manual(self, points)
         plot_3d(eta, precision)
-    
-    
-    def on_train_start(self):
-        
-        self.view_eta_field()
-        
-        
-    # def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
-    #     self.global_batch += 1
-    #     if self.global_batch % 5 == 0:
-    #         self.view_eta_field()
-    
-    def on_train_epoch_start(self):
-        self.epoch_end_once = 1
-    
-    
-    def on_train_epoch_end(self):
-        
-        if self.epoch_end_once == 0:
-            return
-        self.epoch_end_once = 0
-        
-        self.log("ave_train_loss", self.ave_train_loss/self.ave_train_loss_cnt, prog_bar=True, sync_dist=True)
-        self.ave_train_loss_cnt = 0
-        self.ave_train_loss = 0.
-        
-        self.global_epoch += 1
-        if self.view_config.view_per_epoch > 0 and self.global_epoch % self.view_config.view_per_epoch == 0:
-            self.view_eta_field()
-            print("\n")
-            
-        if self.view_config.save_per_epoch > 0 and self.global_epoch % self.view_config.save_per_epoch == 0:
-            self.save_model(self.view_config.save_path)
-            
-            
-    def on_validation_epoch_start(self):
-        self.val_epoch_once = 1
-    
-            
-    def on_validation_epoch_end(self):
-        if self.val_epoch_once == 0:
-            return
-        self.val_epoch_once = 0
-        
-        self.log("ave_val_loss", self.ave_val_loss/self.ave_val_loss_cnt, prog_bar=True, sync_dist=True)
-        self.ave_val_loss_cnt = 0
-        self.ave_val_loss = 0.
-            
+
             
     # return optimizer list, configured in configure_optimizers
     def optimizers(self, use_pl_optimizer: bool = True):
@@ -295,18 +234,38 @@ class GaussianModel(pl.LightningModule):
             return [lr_schedulers]
         
         return lr_schedulers
-            
-            
-    def setup_from_file(self, file_config: FileConfig):
+    
+    
+    def log_metrics_batch(self):
+        self.log("loss", self.loss, prog_bar=True)
+        self.log("n_gs", torch.tensor(self.n_gaussians, dtype=torch.float32), prog_bar=True)
+        self.log("regs", self.regs, prog_bar=True)
         
-        data_path = file_config.data_path
-        if file_config.data_type == "pt":
+        
+    def log_metrics_epoch(self):
+        self.log("ave_train_loss", self.ave_train_loss/self.ave_train_loss_cnt, prog_bar=True)
+        self.log("ave_val_loss", self.ave_val_loss/self.ave_val_loss_cnt, prog_bar=True)
+        self.ave_train_loss_cnt = 0
+        self.ave_train_loss = 0.
+        self.ave_val_loss_cnt = 0
+        self.ave_val_loss = 0.
+            
+            
+    def setup_from_file(self, data_path, data_type, activated):
+        
+        if data_type == "pt":
             means = torch.load(os.path.join(data_path, "means.pt")).to(self.device)
             scales = torch.load(os.path.join(data_path, "scales.pt")).to(self.device)
             rotations = torch.load(os.path.join(data_path, "rotations.pt")).to(self.device)
             opacities = torch.load(os.path.join(data_path, "opacities.pt")).to(self.device)
+        if data_type == "ckpt":
+            data = torch.load(data_path)
+            means = data['state_dict']["gaussian.means"].to(self.device)
+            scales = data['state_dict']["gaussian.scales"].to(self.device)
+            rotations = data['state_dict']["gaussian.rotations"].to(self.device)
+            opacities = data['state_dict']["gaussian.opacities"].to(self.device)
         
-        if not file_config.activated:
+        if not activated:
             scales = self.scale_inverse_activation(scales)
             rotations = self.rotation_inverse_activation(rotations)
             opacities = self.opacity_inverse_activation(torch.clamp(opacities, min=1e-6, max=1.0-1e-6))
@@ -336,9 +295,9 @@ class GaussianModel(pl.LightningModule):
         torch.save(self.opacities, os.path.join(path, "opacities.pt"))
             
             
-    def setup_randomize(self, random_config: RandomizationConfig):
+    def setup_randomize(self, random_config: SetupConfig):
         
-        self.n_gaussians = random_config.n_gaussians
+        self.n_gaussians = random_config.random_n
         means = torch.rand([self.n_gaussians, 3], device=self.device, dtype=torch.float) * (random_config.means_rg[1] - random_config.means_rg[0]) + random_config.means_rg[0]
         scales = self.scale_inverse_activation(torch.rand([self.n_gaussians, 3], device=self.device, dtype=torch.float) * (random_config.scales_rg[1] - random_config.scales_rg[0]) + random_config.scales_rg[0])
         rotations = self.rotation_inverse_activation(torch.rand([self.n_gaussians, 4], device=self.device, dtype=torch.float) * (random_config.rotation_rg[1] - random_config.rotation_rg[0]) + random_config.rotation_rg[0])

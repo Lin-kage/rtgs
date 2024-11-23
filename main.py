@@ -1,5 +1,6 @@
 # main.py
 from lightning.pytorch.cli import LightningCLI
+from lightning.pytorch.callbacks import ModelCheckpoint
 import lightning.pytorch as pl
 
 # simple demo classes for your convenience
@@ -16,10 +17,11 @@ from internal.field import Grid3D, TensorGrid3D, FieldGenerator
 from internal.viewer import plot_3d
 from internal.render import ray_trace
 from internal.utils import get_eta_autograd, get_eta_manual
-from internal.config import *
+from internal.config_class import *
 from internal.density_controller import DensityController
 from internal.test import EtaDataLoader, EtaGaussianModel, EtaNerf
 from internal.debug import tensor_grid_test
+from internal.callbacks import *
 
 from internal.debug import print_tensor
 import time
@@ -32,36 +34,41 @@ def cli_main():
 
 if __name__ == "__main__":
     # cli_main()
-
-    seed = 40
-    torch.manual_seed(seed=seed)
+    import internal.config as config
     
-    data_path = './data/matern_s8'
+    torch.manual_seed(seed=config.seed)
     
-    lum_field = (np.load(data_path + '/lum_field.npy', allow_pickle=False))
-    eta_true = (np.load(data_path + '/eta_true.npy', allow_pickle=True))
+    model_ckpt = ModelCheckpoint(
+        dirpath=config.checkpoint_path,
+        filename='{epoch:02d}',
+        save_top_k=-1,
+        every_n_epochs=config.checkpoint_per_epoch,
+        save_weights_only=True
+    )
+    
+    trainer = pl.Trainer(max_epochs=config.max_epochs, accelerator=config.accelerator, devices=config.devices,
+                         callbacks=[LogCallback(), model_ckpt],
+                         strategy='auto'
+                         )
+    trainer.fit(
+        GaussianModel(
+            renderConfig=RenderConfig(config.lum_field_path, config.sum_steps, config.d_steps, config.d_s),
+            optimizationConfig=OptimizationConfig(config.automatic_optimization, config.means_lr, config.scales_lr, config.rotations_lr, config.opacities_lr, config.reg_factor),
+            viewConfig=ViewConfig(config.enable_view, config.view_per_epoch),
+            setupConfig=SetupConfig(config.setup_option, config.random_n, config.random_means, config.random_scales, config.random_rotations, config.random_opacities, config.from_file_path, config.from_file_type, config.activated),
+            density_controller=DensityController(config.densify_epoch_from_until, config.densify_grad_threshold, config.cull_opacity_threshold, config.cull_scale_threshold, config.clone_split_threshold),
+            ),
+        RaysDataLoader(data_path=config.data_path, data_type=config.data_type, batchsize=config.batchsize, train_slice=config.train_slice)
+        )
+    
+    
+    # data_path = './data/matern_s8'
+    
+    # lum_field = (np.load(data_path + '/lum_field.npy', allow_pickle=False))
+    # eta_true = (np.load(data_path + '/eta_true.npy', allow_pickle=True))
     
     # plot_3d(torch.Tensor(eta_true), 16, reverse=True)
     # plot_3d(torch.tensor(lum_field), 64)
-    
-    trainer = pl.Trainer(max_epochs=500, accelerator='gpu', devices=[7])
-    trainer.fit(
-        GaussianModel(
-            RenderConfig=RenderConfig(lum_field_fn=TensorGrid3D(torch.tensor(lum_field).reshape(64,64,64)).interp_linear,),
-            OptimizationConfig=OptimizationConfig(means_lr=2e-4, opacities_lr=2e-6, scales_lr=1e-4, rotations_lr=1e-4, reg_factor=1e-4),
-            ViewConfig=ViewConfig(view_per_epoch=5, enable_view=True, save_per_epoch=10, save_path='./gaussian_save/gaussian1117_modified_prune'),
-            # FileConfig=FileConfig(data_path='./gaussian_save/gaussian1117_modified_prune/epoch_120', data_type='pt', activated=False),
-            RandomizationConfig=RandomizationConfig(n_gaussians=4000, scales_rg=[.05, .7], opacities_rg=[0.0, 1e-5]),
-            density_controller=DensityController(
-                densify_epoch_from_until=[10,1000], 
-                densify_grad_threshold=5e-4,
-                cull_opacity_threshold=[5e-7, 1e-2],
-                cull_scale_threshold=[0., 1.0],
-                clone_split_threshold=0.4,
-                ),
-            ),
-        RaysDataLoader(data_path='./gaussian_save/test4096', data_type='manual', batchsize=8, train_slice=0.95)
-        )
     
     # ## Create Data
     # data_path = './data/matern_s8'

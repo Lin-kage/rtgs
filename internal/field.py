@@ -1,6 +1,5 @@
 import torch
 from scipy import ndimage
-from .gaussian import Gaussian
 from .utils import get_eta_manual, eval_gaussian_3d
 
 
@@ -30,7 +29,7 @@ class Grid3D():
 class TensorGrid3D():
     """
         An interpolate tensor gird
-        the input grid_val must be N*N*N
+        the input grid_val must be [N,N,N]
         can be used for autograd
     """
     

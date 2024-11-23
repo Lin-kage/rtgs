@@ -5,8 +5,6 @@ import lightning.pytorch as pl
 import numpy as np  
 import os
 
-from .field import Grid3D
-
 
 class RaysDataLoader(pl.LightningDataModule):
     def __init__(self, data_path, data_type, batchsize=64, train_slice=0.95):
