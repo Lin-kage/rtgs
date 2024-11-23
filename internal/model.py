@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import os 
 from .utils import get_eta_manual, get_eta_only
 from .viewer import plot_3d
-from .field import FieldGenerator, TensorGrid3D
+from .field import TensorGrid3D
 from .config_class import *
 from .density_controller import DensityController
 

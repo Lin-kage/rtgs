@@ -1,6 +1,5 @@
 import torch
 from scipy import ndimage
-from .utils import get_eta_manual, eval_gaussian_3d
 
 
 class Grid3D():
